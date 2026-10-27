@@ -13,6 +13,7 @@ from flux_match.balancing_area_demand import (
     build_ba_demand,
     find_demand_files,
     read_annual_demand,
+    read_ba_demand,
     split_by_population,
     write_balancing_area_demand,
 )
@@ -211,6 +212,34 @@ class WriteTest(TempDirTest):
         with self.assertRaises(DataError):
             write_balancing_area_demand(find_demand_files(self.data_dir), dest)
         self.assertEqual([p.name for p in self.dir.glob("*.csv*")], [])
+
+
+class ReadBaDemandTest(TempDirTest):
+    def write(self, text: str) -> Path:
+        path = self.dir / "balancing_area_demand.csv"
+        path.write_text(text)
+        return path
+
+    def test_uses_newest_year_column(self):
+        path = self.write("balancing_area,2024,2022\nEast.a,10,999\nWest.a,3,1\n")
+        year, demand = read_ba_demand(path)
+        self.assertEqual(year, 2024)
+        self.assertEqual(demand, {"East.a": 10.0, "West.a": 3.0})
+
+    def test_rejects_non_year_column(self):
+        path = self.write("balancing_area,2024,notes\nEast.a,1,no\n")
+        with self.assertRaisesRegex(DataError, "notes"):
+            read_ba_demand(path)
+
+    def test_rejects_duplicate_balancing_area(self):
+        path = self.write("balancing_area,2024\nEast.a,1\nEast.a,2\n")
+        with self.assertRaisesRegex(DataError, "duplicate balancing area East.a"):
+            read_ba_demand(path)
+
+    def test_rejects_non_numeric_demand(self):
+        path = self.write("balancing_area,2024\nEast.a,oops\n")
+        with self.assertRaisesRegex(DataError, "not a number"):
+            read_ba_demand(path)
 
 
 if __name__ == "__main__":

@@ -165,5 +165,47 @@ def write_balancing_area_demand(files: DemandFiles, dest: Path) -> None:
     write_csv_atomic(dest, (BA_COLUMN, *map(str, years)), rows)
 
 
+def read_ba_demand(path: Path) -> tuple[int, dict[str, float]]:
+    """Newest year in the file, and that year's demand in MWh per balancing area."""
+    rows = read_csv(path, (BA_COLUMN,))
+    if not rows:
+        raise DataError(f"{path.name}: no balancing areas")
+    years = _year_columns(path.name, rows[0])
+    year = max(years)
+    column = str(year)
+    demand: dict[str, float] = {}
+    for line, row in enumerate(rows, start=2):
+        ba = row[BA_COLUMN].strip()
+        if not ba:
+            raise DataError(f"{path.name}:{line}: blank balancing_area")
+        if ba in demand:
+            raise DataError(f"{path.name}:{line}: duplicate balancing area {ba}")
+        text = row[column]
+        try:
+            value = float(text)
+        except TypeError, ValueError:
+            raise DataError(
+                f"{path.name}:{line}: {year} demand is not a number: {text!r}"
+            ) from None
+        if not math.isfinite(value):
+            raise DataError(f"{path.name}:{line}: invalid {year} demand {text!r}")
+        demand[ba] = value
+    return year, demand
+
+
+def _year_columns(name: str, row: Mapping[str, str]) -> list[int]:
+    years = []
+    for column in row:
+        if column == BA_COLUMN:
+            continue
+        try:
+            years.append(int(column))
+        except ValueError:
+            raise DataError(f"{name}: demand column {column!r} is not a year") from None
+    if not years:
+        raise DataError(f"{name}: no demand year columns")
+    return years
+
+
 def demand_file_paths(files: DemandFiles) -> Sequence[Path]:
     return [path for by_province in files.values() for path in by_province.values()]
