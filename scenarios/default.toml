@@ -12,6 +12,8 @@ strategy = "greedy"
 max_capacity_mw_per_cell = 1000.0
 
 [dispatch]
+# Calendar years of demand and weather data to dispatch.
+dispatch_years = [2024]
 # Battery state of charge at hour 1, as a fraction of energy capacity.
 initial_state_of_charge_fraction = 0.0
 # Applied entirely on charge: energy stored = energy drawn * efficiency. Discharge is lossless.

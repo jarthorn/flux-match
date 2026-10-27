@@ -14,12 +14,14 @@ from flux_match.run_context import RunContext
 
 @dataclass(frozen=True)
 class DispatchParams:
+    dispatch_years: tuple[int, ...]
     initial_state_of_charge_fraction: float
     round_trip_efficiency: float
 
     @classmethod
     def from_config(cls, params: Config) -> Self:
         return cls(
+            dispatch_years=_years(params, "dispatch_years"),
             initial_state_of_charge_fraction=_fraction(
                 params, "initial_state_of_charge_fraction", allow_zero=True
             ),
@@ -30,6 +32,14 @@ class DispatchParams:
 def run(ctx: RunContext) -> None:
     DispatchParams.from_config(ctx.config.section("dispatch"))
     raise NotImplementedError("dispatch step is not implemented yet")
+
+
+def _years(params: Config, key: str) -> tuple[int, ...]:
+    years = params.get_list(key, int)
+    duplicates = sorted({y for y in years if years.count(y) > 1})
+    if duplicates:
+        raise ConfigError(f"dispatch.{key} has duplicate years: {duplicates}")
+    return tuple(years)
 
 
 def _fraction(params: Config, key: str, allow_zero: bool) -> float:

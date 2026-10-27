@@ -32,6 +32,16 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "must be float"):
             config({"x": "1.0"}).get("x", float)
 
+    def test_list_elements_type_checked_with_index_in_message(self):
+        self.assertEqual(config({"years": [2023, 2024]}).get_list("years", int), [2023, 2024])
+        with self.assertRaisesRegex(ConfigError, r"'years\[1\]' must be int"):
+            config({"years": [2023, "2024"]}).get_list("years", int)
+
+    def test_list_must_be_non_empty_array(self):
+        for value in ([], 2024):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                config({"years": value}).get_list("years", int)
+
     def test_section_must_be_table(self):
         with self.assertRaisesRegex(ConfigError, "must be a table"):
             config({"dispatch": 1}).section("dispatch")

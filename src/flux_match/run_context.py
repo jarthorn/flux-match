@@ -32,9 +32,8 @@ class RunContext:
     def vre_hourly_path(self) -> Path:
         return self.run_dir / "vre_by_ba_hourly.csv"
 
-    @property
-    def dispatch_hourly_path(self) -> Path:
-        return self.run_dir / "dispatch_hourly.csv"
+    def dispatch_hourly_path(self, year: int) -> Path:
+        return self.run_dir / f"dispatch_hourly_{year}.csv"
 
     def require_complete(self, step: str) -> None:
         if step not in self._read_manifest()["completed_steps"]:
