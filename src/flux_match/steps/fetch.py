@@ -33,14 +33,13 @@ from urllib.request import Request, urlopen
 
 from flux_match import paths
 from flux_match.balancing_area_demand import (
-    BA_DEMAND_FILENAME,
     demand_file_paths,
     find_demand_files,
     write_balancing_area_demand,
 )
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, report_data_error
-from flux_match.grid_cell_rankings import RANKINGS_FILENAME, write_grid_cell_rankings
+from flux_match.grid_cell_rankings import write_grid_cell_rankings
 from flux_match.io import write_csv
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -177,7 +176,7 @@ def _write_rankings(params: FetchParams, data_dir: Path) -> None:
         csv_path(data_dir, GRID_CELL_TABLE),
         *(csv_path(data_dir, table, year=year) for table in CAPACITY_FACTOR_TABLES),
     ]
-    dest = data_dir.parent / RANKINGS_FILENAME
+    dest = data_dir.parent / paths.RANKINGS_FILENAME
     if _already_present(dest) and dest.stat().st_mtime >= max(p.stat().st_mtime for p in inputs):
         return
     print(f"writing {dest.name}", flush=True)
@@ -188,7 +187,7 @@ def _write_rankings(params: FetchParams, data_dir: Path) -> None:
 def _write_balancing_area_demand(data_dir: Path) -> None:
     """Derive balancing_area_demand.csv if missing or older than any provincial demand file."""
     files = find_demand_files(data_dir)
-    dest = data_dir.parent / BA_DEMAND_FILENAME
+    dest = data_dir.parent / paths.BA_DEMAND_FILENAME
     newest = max(p.stat().st_mtime for p in demand_file_paths(files))
     if _already_present(dest) and dest.stat().st_mtime >= newest:
         return

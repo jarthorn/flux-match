@@ -15,10 +15,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from flux_match import paths
-from flux_match.balancing_area_demand import BA_DEMAND_FILENAME, read_ba_demand
+from flux_match.balancing_area_demand import read_ba_demand
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
-from flux_match.grid_cell_rankings import RANKINGS_COLUMNS, RANKINGS_FILENAME, read_grid_cells
+from flux_match.grid_cell_rankings import RANKINGS_COLUMNS, read_grid_cells
 from flux_match.io import read_csv
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR
@@ -43,8 +43,8 @@ class GreedyStrategy(Strategy):
 
     def select(self, ctx: RunContext) -> list[Site]:
         return select_sites(
-            demand_path=paths.DATA_DIR / BA_DEMAND_FILENAME,
-            rankings_path=paths.DATA_DIR / RANKINGS_FILENAME,
+            demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
+            rankings_path=paths.DATA_DIR / paths.RANKINGS_FILENAME,
             grid_cell_info=paths.CODERS_DATA_DIR / GRID_CELL_INFO,
             wind_capacity_ratio=self.wind_capacity_ratio,
             solar_capacity_ratio=self.solar_capacity_ratio,

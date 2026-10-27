@@ -28,7 +28,6 @@ from flux_match.schema import HOURS_PER_YEAR
 HOURS_PER_DAY = 24
 DAYS_PER_YEAR = HOURS_PER_YEAR // HOURS_PER_DAY
 
-RANKINGS_FILENAME = "grid_cell_rankings.csv"
 RANKINGS_COLUMNS = (
     "grid_cell",
     "annual_wind_capacity_factor",

@@ -23,7 +23,6 @@ from flux_match.errors import DataError
 from flux_match.io import read_csv, write_csv_atomic
 from flux_match.schema import HOURS_PER_YEAR
 
-BA_DEMAND_FILENAME = "balancing_area_demand.csv"
 BA_COLUMN = "balancing_area"
 
 DEMAND_FILE_PATTERN = re.compile(r"provincial_demand_([A-Z]{2})_(\d{4})\.csv")
