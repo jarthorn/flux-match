@@ -19,7 +19,7 @@ Given these inputs, flux-match runs through the hourly increments of a year, for
 
 The program is divided into the following steps:
 1. Fetch raw input data from CODERS. This step is skipped if the files are already present.
-2. Wind and solar selection. This step employs a variety of strategies to select a set of wind and solar generation sites across Canada. Each strategy has a short name represented as a single string. The default strategy is called "greedy" and simply selects locations that maximize annual output, up to a maximum output per map grid cell.
+2. Wind and solar selection. This step employs a variety of strategies to select a set of wind and solar generation sites across Canada. Each strategy has a short name represented as a single string. The default strategy is called "greedy" and simply selects locations that maximize annual output, up to a maximum output per map grid cell. Every strategy writes the same output, `selected_sites.csv`: a sparse table with one row per grid cell and generation type (`wind_ons`, `wind_ofs`, `solar`) that has capacity. The format is specified in `selection/base.py`.
 3. Preprocess input data into the format expected for the dispatch step. This consists of calculating the hourly wind and solar generation per balancing area, using the wind and solar sites selected in step 2, combined with the capacity factors per grid cell fetched in 1.
 4. Dispatch. This step runs through hourly increments for each balancing area, as described above.
 5. Visualization. This is a standalone script that generates a streamlit dashboard for visualizing the results of the run.

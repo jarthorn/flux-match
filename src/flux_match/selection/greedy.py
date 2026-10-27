@@ -3,7 +3,7 @@
 from flux_match.config import Config
 from flux_match.errors import ConfigError
 from flux_match.run_context import RunContext
-from flux_match.selection.base import Strategy
+from flux_match.selection.base import Site, Strategy
 
 
 class GreedyStrategy(Strategy):
@@ -15,5 +15,5 @@ class GreedyStrategy(Strategy):
                 f"{self.max_capacity_mw_per_cell}"
             )
 
-    def select(self, ctx: RunContext) -> None:
+    def select(self, ctx: RunContext) -> list[Site]:
         raise NotImplementedError("greedy strategy is not implemented yet")
