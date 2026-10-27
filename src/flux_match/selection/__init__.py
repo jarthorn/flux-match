@@ -2,7 +2,7 @@
 
 from flux_match.errors import ConfigError
 from flux_match.run_context import RunContext
-from flux_match.selection.base import Strategy
+from flux_match.selection.base import Strategy, write_sites
 from flux_match.selection.greedy import GreedyStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
@@ -17,4 +17,5 @@ def run(ctx: RunContext) -> None:
         raise ConfigError(
             f"Unknown selection strategy '{name}'. Available: {', '.join(sorted(STRATEGIES))}"
         )
-    STRATEGIES[name](params.section(name)).select(ctx)
+    sites = STRATEGIES[name](params.section(name)).select(ctx)
+    write_sites(ctx.selected_sites_path, sites)
