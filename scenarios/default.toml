@@ -16,9 +16,10 @@ solar_capacity_ratio  = 1.0
 # Total wind capacity per balancing area, as a fraction of annual demand
 wind_capacity_ratio  = 1.0
 
+max_wind_capacity_mw_per_cell = 1000
+max_solar_capacity_mw_per_cell = 500
+
 [selection.greedy]
-# PLACEHOLDER value: review before relying on results.
-max_capacity_mw_per_cell = 1000.0
 
 [dispatch]
 # Calendar years of demand and weather data to dispatch.

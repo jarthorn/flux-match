@@ -17,5 +17,6 @@ def run(ctx: RunContext) -> None:
         raise ConfigError(
             f"Unknown selection strategy '{name}'. Available: {', '.join(sorted(STRATEGIES))}"
         )
-    sites = STRATEGIES[name](params.section(name)).select(ctx)
+    params.section(name)  # [selection.<strategy>] must exist, even if it has no keys
+    sites = STRATEGIES[name](params).select(ctx)
     write_sites(ctx.selected_sites_path, sites)

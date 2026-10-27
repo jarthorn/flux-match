@@ -85,8 +85,9 @@ def read_sites(path: Path) -> list[Site]:
 
 
 class Strategy(ABC):
-    """Parameters come from the scenario's [selection.<name>] table. Read and validate them
-    all in __init__ so that config errors surface before any work starts."""
+    """Parameters come from the scenario's [selection] table. Read and validate them
+    all in __init__ so that config errors surface before any work starts. Strategy-specific
+    keys live in [selection.<name>] when a strategy needs its own table."""
 
     @abstractmethod
     def __init__(self, params: Config) -> None: ...
