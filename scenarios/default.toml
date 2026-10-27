@@ -1,0 +1,18 @@
+# Default scenario. Every parameter a run uses must be set here; there are no defaults
+# in code. A copy is saved as config.toml in each run folder.
+
+[fetch]
+# CODERS endpoint and dataset settings go here once the fetch step is implemented.
+
+[selection]
+strategy = "greedy"
+
+[selection.greedy]
+# PLACEHOLDER value: review before relying on results.
+max_capacity_mw_per_cell = 1000.0
+
+[dispatch]
+# Battery state of charge at hour 1, as a fraction of energy capacity.
+initial_state_of_charge_fraction = 0.0
+# Applied entirely on charge: energy stored = energy drawn * efficiency. Discharge is lossless.
+round_trip_efficiency = 0.88

@@ -1,0 +1,24 @@
+[project]
+name = "flux-match"
+version = "0.1.0"
+description = "A simple hourly energy dispatch model for Canadian balancing areas."
+readme = "README.md"
+requires-python = ">=3.15"
+dependencies = []
+
+[project.scripts]
+flux-match = "flux_match.cli:main"
+
+[dependency-groups]
+dev = ["ruff"]
+viz = ["streamlit"]
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
