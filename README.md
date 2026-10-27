@@ -9,8 +9,9 @@ Flux Match is a very simple energy dispatch model. It is given a set of inputs f
 - Available battery storage power and capacity per balancing area. The power rating sets the maximum charge and discharge rate for that storage. Round-trip efficiency is a scenario parameter, applied entirely on charge; discharge is lossless.
 - All capacity and demand units are in MW and MWh, unless otherwise noted. Hours of the year are indexed from 1-8760 (we assume all years are not leap years).
 
-Given these inputs, flux-match runs through the hourly increments of a year, for each balancing area. For each hour it subtracts variable generation from demand. Excess generation is stored in the balancing area's battery storage if possible (subject to both power and capacity rating of batteries). Capacity shortfall is taken from storage if capacity is available. The net demand curve is calculated and saved for each hour. The following values are saved in a CSV file for each hour increment:
+Given these inputs, flux-match runs through the hourly increments of a year, for each balancing area. For each hour it subtracts variable generation from demand. Excess generation is stored in the balancing area's battery storage if possible (subject to both power and capacity rating of batteries). Capacity shortfall is taken from storage if capacity is available. The net demand curve is calculated and saved for each hour. The following values are saved for each hour increment, in one CSV file per dispatch year (`dispatch_hourly_<year>.csv`):
 - Balancing Area Name
+- Calendar year
 - Hour increment (1-8760)
 - Variable generation (wind+solar)
 - Battery output (positive for discharge, negative for recharge)

@@ -36,13 +36,23 @@ class Config:
         return Config(value, self.source, self._qualify(key))
 
     def get[T](self, key: str, expected: type[T]) -> T:
+        return self._check_type(self._lookup(key), expected, self._qualify(key))
+
+    def get_list[T](self, key: str, element: type[T]) -> list[T]:
+        """A non-empty array whose elements all have the given type."""
         value = self._lookup(key)
+        name = self._qualify(key)
+        if not isinstance(value, list) or not value:
+            raise ConfigError(f"{self.source}: '{name}' must be a non-empty array, got {value!r}")
+        return [self._check_type(v, element, f"{name}[{i}]") for i, v in enumerate(value)]
+
+    def _check_type[T](self, value: Any, expected: type[T], name: str) -> T:
         if expected is float and type(value) is int:
             value = float(value)
         # bool is a subclass of int, so `true` would otherwise pass as an int.
         if not isinstance(value, expected) or (isinstance(value, bool) and expected is not bool):
             raise ConfigError(
-                f"{self.source}: '{self._qualify(key)}' must be {expected.__name__}, "
+                f"{self.source}: '{name}' must be {expected.__name__}, "
                 f"got {type(value).__name__} {value!r}"
             )
         return value

@@ -4,6 +4,7 @@ HOURS_PER_YEAR = 8760
 
 DISPATCH_COLUMNS = (
     "balancing_area",
+    "year",
     "hour",
     "variable_generation_mw",
     "battery_output_mw",
