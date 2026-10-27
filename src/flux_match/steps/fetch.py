@@ -6,6 +6,9 @@ folder, so downloads are reused across runs.
 Every hourly table is stored with exactly HOURS_PER_YEAR (8760) hours. In leap years,
 February 29 (hour-ending 1417-1440) is dropped and later hours are renumbered, so hour
 1441 becomes 1417. Other columns, such as local_time, keep their original values.
+
+A blank demand value is reported on stderr and replaced with the previous hour's value.
+JSON rows that don't all have the same columns are a hard failure, and no file is written.
 """
 
 import csv
@@ -21,7 +24,7 @@ from urllib.request import Request, urlopen
 
 from flux_match import paths
 from flux_match.config import Config
-from flux_match.errors import DataError
+from flux_match.errors import DataError, report_data_error
 from flux_match.io import write_csv
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -80,6 +83,8 @@ class Download:
     params: dict[str, str | int]
     required_columns: tuple[str, ...] | None = None
     hour_column: str | None = None
+    # Blank values in these columns are copied from the previous hour. Needs hour_column.
+    fill_columns: tuple[str, ...] = ()
 
     @property
     def filename(self) -> str:
@@ -108,6 +113,7 @@ def downloads(params: FetchParams) -> list[Download]:
                     {"province": province, "year": year},
                     DEMAND_COLUMNS,
                     hour_column="annual_hour_ending",
+                    fill_columns=("demand_MWh",),
                 )
             )
     for year in params.capacity_factor_years:
@@ -136,7 +142,7 @@ def run(
     api_key = _coders_api_key(environ, dotenv_path)
     get = opener or urlopen
     for item, dest in missing:
-        print(f"downloading {dest.name}")
+        print(f"downloading {dest.name}", flush=True)
         _fetch_one(item, dest, api_key, get)
 
 
@@ -251,7 +257,35 @@ def _json_records(body: bytes, item: Download) -> list[dict[str, object]]:
         missing = [c for c in item.required_columns if c not in records[0]]
         if missing:
             raise DataError(f"CODERS {item.table} missing required columns {missing}")
+    columns = set(records[0])
+    for i, row in enumerate(records):
+        if set(row) != columns:
+            raise DataError(
+                f"CODERS {item.table} ({_params_desc(item.params)}) row {i} has different "
+                f"columns from row 0: missing {sorted(columns - set(row))}, "
+                f"extra {sorted(set(row) - columns)}"
+            )
     return records
+
+
+def _fill_missing_from_previous_hour(
+    records: list[dict[str, object]], hour_column: str, columns: tuple[str, ...], name: str
+) -> None:
+    """Replace blank values with the previous hour's value, reporting each one on stderr."""
+    for i, row in enumerate(records):
+        if str(row[hour_column]) != str(i + 1):
+            raise DataError(
+                f"{name}: expected hour {i + 1} on row {i + 1}, got {row[hour_column]!r}"
+            )
+        for column in columns:
+            if row[column] is not None and str(row[column]).strip():
+                continue
+            if i == 0:
+                raise DataError(f"{name}: missing {column} at hour 1, no previous hour to copy")
+            row[column] = records[i - 1][column]
+            report_data_error(
+                f"{name}: missing {column} at hour {i + 1}; copied {row[column]} from hour {i}"
+            )
 
 
 def _stream_to_file(response: Any, dest: Path) -> None:
@@ -317,6 +351,10 @@ def _fetch_one(item: Download, dest: Path, api_key: str, opener: Opener) -> None
                 _stream_to_file(response, tmp)
             else:
                 records = _json_records(response.read(), item)
+                if item.fill_columns:
+                    _fill_missing_from_previous_hour(
+                        records, item.hour_column, item.fill_columns, dest.name
+                    )
                 write_csv(tmp, tuple(records[0].keys()), records)
         if item.hour_column:
             _drop_leap_day(tmp, item.hour_column, dest.name)
