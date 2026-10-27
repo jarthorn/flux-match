@@ -2,7 +2,7 @@ import csv
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO, StringIO
@@ -157,8 +157,10 @@ class FetchTest(unittest.TestCase):
         self.data_dir = Path(tmp.name) / "coders"
         self.dotenv = Path(tmp.name) / ".env"
 
-    def _run(self, opener, cfg=None, environ=None, dotenv_path=None):
-        with redirect_stdout(StringIO()):
+    def _run(self, opener, cfg=None, environ=None, dotenv_path=None) -> str:
+        """Run fetch and return what it wrote to stderr."""
+        stderr = StringIO()
+        with redirect_stdout(StringIO()), redirect_stderr(stderr):
             run(
                 cfg or fetch_config(),
                 self.data_dir,
@@ -166,6 +168,7 @@ class FetchTest(unittest.TestCase):
                 dotenv_path=self.dotenv if dotenv_path is None else dotenv_path,
                 opener=opener,
             )
+        return stderr.getvalue()
 
     def test_download_plan_names_files_by_table_province_and_year(self):
         params = FetchParams.from_config(
@@ -339,6 +342,38 @@ class FetchTest(unittest.TestCase):
         opener = RecordingOpener(responses(grid=[{"grid_cell": 1}]))
         with self.assertRaisesRegex(DataError, "missing required columns"):
             self._run(opener)
+
+    def test_blank_demand_copied_from_previous_hour_and_reported(self):
+        rows = demand_rows(2023, HOURS_PER_YEAR)
+        rows[4]["demand_MWh"] = None
+        rows[5]["demand_MWh"] = ""
+        stderr = self._run(RecordingOpener(responses(demand=rows)))
+        demand = [
+            r["demand_MWh"] for r in read_rows(self.data_dir / "provincial_demand_ON_2024.csv")
+        ]
+        self.assertEqual(demand[3:7], ["103", "103", "103", "106"])
+        self.assertIn("missing demand_MWh at hour 5; copied 103 from hour 4", stderr)
+        self.assertIn("missing demand_MWh at hour 6; copied 103 from hour 5", stderr)
+
+    def test_blank_demand_in_first_hour_fails(self):
+        rows = demand_rows(2023, HOURS_PER_YEAR)
+        rows[0]["demand_MWh"] = None
+        with self.assertRaisesRegex(DataError, "missing demand_MWh at hour 1"):
+            self._run(RecordingOpener(responses(demand=rows)))
+        self.assertFalse((self.data_dir / "provincial_demand_ON_2024.csv").exists())
+
+    def test_json_rows_with_different_columns_fail_without_writing_file(self):
+        for change, message in [
+            (lambda row: row.pop("demand_MWh"), r"row 7 .* missing \['demand_MWh'\], extra \[\]"),
+            (lambda row: row.update(note="x"), r"row 7 .* missing \[\], extra \['note'\]"),
+        ]:
+            with self.subTest(message=message):
+                rows = demand_rows(2023, HOURS_PER_YEAR)
+                change(rows[7])
+                with self.assertRaisesRegex(DataError, message):
+                    self._run(RecordingOpener(responses(demand=rows)))
+                self.assertFalse((self.data_dir / "provincial_demand_ON_2024.csv").exists())
+                self.assertEqual([p.name for p in self.data_dir.glob("*.tmp*")], [])
 
     def test_read_env_file_ignores_comments_and_export(self):
         path = self.data_dir.parent / "sample.env"
