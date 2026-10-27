@@ -1,0 +1,3 @@
+#!/bin/bash
+
+uv run --group viz streamlit run src/flux_match/viz/app.py -- "$@"

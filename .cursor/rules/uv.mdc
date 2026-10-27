@@ -1,0 +1,9 @@
+---
+name: uv
+description: Install Python packages, access Python CLI, run Python code and scripts, execute Python commands, and manage Python environments. Use uv run for all Python execution instead of direct python commands
+---
+
+# Overview
+
+# Python Package Management with uv
+Use uv exclusively for Python package management in all projects.
