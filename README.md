@@ -7,7 +7,7 @@ Flux Match is a very simple energy dispatch model. It is given a set of inputs f
 - Both demand and capacity are segmented by balancing areas, which are regions of Canada that roughly follow the major segments of the Canadian electricity grid. Most provinces have a single balancing area, but some larger provinces have two.
 - A list of wind and solar generation sites, with a given nameplate capacity and grid cell
 - Available battery storage power and capacity per balancing area. The power rating sets the maximum charge and discharge rate for that storage. Round-trip efficiency is a scenario parameter, applied entirely on charge; discharge is lossless.
-- All capacity and demand units are in MW and MWh, unless otherwise noted. Hours of the year are indexed from 1-8760 (or 8784 in leap years).
+- All capacity and demand units are in MW and MWh, unless otherwise noted. Every year has 8760 hours, indexed 1-8760. In leap years, the fetch step drops February 29 (hour-ending 1417-1440) and renumbers the remaining hours, so March 1 starts at hour 1417. Demand from one year may be dispatched against capacity factors from another, so all years must line up hour for hour.
 
 Given these inputs, flux-match runs through the hourly increments of a year, for each balancing area. For each hour it subtracts variable generation from demand. Excess generation is stored in the balancing area's battery storage if possible (subject to both power and capacity rating of batteries). Capacity shortfall is taken from storage if capacity is available. The net demand curve is calculated and saved for each hour. The following values are saved for each hour increment, in one CSV file per dispatch year (`dispatch_hourly_<year>.csv`):
 - Balancing Area Name
