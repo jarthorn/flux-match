@@ -42,6 +42,11 @@ class ConfigTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ConfigError):
                 config({"years": value}).get_list("years", int)
 
+    def test_unique_list_rejects_duplicates(self):
+        self.assertEqual(config({"x": [1, 1]}).get_list("x", int), [1, 1])
+        with self.assertRaisesRegex(ConfigError, r"'x' has duplicates: \[1\]"):
+            config({"x": [1, 2, 1]}).get_list("x", int, unique=True)
+
     def test_section_must_be_table(self):
         with self.assertRaisesRegex(ConfigError, "must be a table"):
             config({"dispatch": 1}).section("dispatch")

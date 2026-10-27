@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 
 from flux_match import paths
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError
+from flux_match.errors import DataError
 from flux_match.io import write_csv
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -68,9 +68,9 @@ class FetchParams:
     @classmethod
     def from_config(cls, params: Config) -> Self:
         return cls(
-            provinces=_unique(params, "provinces", str),
-            demand_years=_unique(params, "demand_years", int),
-            capacity_factor_years=_unique(params, "capacity_factor_years", int),
+            provinces=tuple(params.get_list("provinces", str, unique=True)),
+            demand_years=tuple(params.get_list("demand_years", int, unique=True)),
+            capacity_factor_years=tuple(params.get_list("capacity_factor_years", int, unique=True)),
         )
 
 
@@ -78,39 +78,41 @@ class FetchParams:
 class Download:
     table: str
     params: dict[str, str | int]
-    filename: str
     required_columns: tuple[str, ...] | None = None
     hour_column: str | None = None
 
+    @property
+    def filename(self) -> str:
+        return csv_filename(self.table, **self.params)
 
-def csv_path(data_dir: Path, table: str, **filters: str | int) -> Path:
-    """Path of a cached CODERS table, matching the filenames written by this step."""
-    parts = [table]
-    if "province" in filters:
-        parts.append(str(filters["province"]))
-    if "year" in filters:
-        parts.append(str(filters["year"]))
-    return data_dir / f"{'_'.join(parts)}.csv"
+
+def csv_filename(table: str, province: str | None = None, year: int | None = None) -> str:
+    """Name of a cached CODERS table: `<table>[_<province>][_<year>].csv`."""
+    parts = [table, province, None if year is None else str(year)]
+    return "_".join(p for p in parts if p is not None) + ".csv"
+
+
+def csv_path(
+    data_dir: Path, table: str, province: str | None = None, year: int | None = None
+) -> Path:
+    return data_dir / csv_filename(table, province, year)
 
 
 def downloads(params: FetchParams) -> list[Download]:
-    items = [
-        Download(GRID_CELL_TABLE, {}, f"{GRID_CELL_TABLE}.csv", GRID_CELL_COLUMNS),
-    ]
+    items = [Download(GRID_CELL_TABLE, {}, GRID_CELL_COLUMNS)]
     for year in params.demand_years:
         for province in params.provinces:
             items.append(
                 Download(
                     DEMAND_TABLE,
                     {"province": province, "year": year},
-                    f"{DEMAND_TABLE}_{province}_{year}.csv",
                     DEMAND_COLUMNS,
                     hour_column="annual_hour_ending",
                 )
             )
     for year in params.capacity_factor_years:
         for table in CAPACITY_FACTOR_TABLES:
-            items.append(Download(table, {"year": year}, f"{table}_{year}.csv", hour_column="h"))
+            items.append(Download(table, {"year": year}, hour_column="h"))
     return items
 
 
@@ -140,14 +142,6 @@ def run(
 
 def _already_present(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
-
-
-def _unique[T](params: Config, key: str, element: type[T]) -> tuple[T, ...]:
-    values = params.get_list(key, element)
-    duplicates = sorted({v for v in values if values.count(v) > 1}, key=str)
-    if duplicates:
-        raise ConfigError(f"fetch.{key} has duplicates: {duplicates}")
-    return tuple(values)
 
 
 def _read_env_file(path: Path) -> dict[str, str]:

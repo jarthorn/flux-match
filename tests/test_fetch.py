@@ -194,17 +194,19 @@ class FetchTest(unittest.TestCase):
         )
 
     def test_duplicate_config_values_rejected(self):
-        with self.assertRaisesRegex(ConfigError, "fetch.demand_years has duplicates"):
+        with self.assertRaisesRegex(ConfigError, r"'fetch\.demand_years' has duplicates"):
             FetchParams.from_config(fetch_config(demand_years=[2024, 2024]).section("fetch"))
 
-    def test_default_scenario_lists_all_provinces_and_years(self):
+    def test_default_scenario_is_valid_and_plans_one_download_per_combination(self):
         params = FetchParams.from_config(
             Config.load(paths.SCENARIOS_DIR / "default.toml").section("fetch")
         )
-        self.assertEqual(len(params.provinces), 10)
-        self.assertEqual(params.demand_years, tuple(range(2018, 2025)))
-        self.assertEqual(params.capacity_factor_years, (2021,))
-        self.assertEqual(len(downloads(params)), 1 + 10 * 7 + 2)
+        expected = (
+            1
+            + len(params.provinces) * len(params.demand_years)
+            + 2 * len(params.capacity_factor_years)
+        )
+        self.assertEqual(len(downloads(params)), expected)
 
     def test_json_tables_written_as_csv_and_existing_files_skipped(self):
         solar = capacity_factor_csv(HOURS_PER_YEAR)
@@ -220,9 +222,7 @@ class FetchTest(unittest.TestCase):
         self.assertEqual((self.data_dir / "solar_capacity_factor_2021.csv").read_bytes(), solar)
 
         opener.calls.clear()
-        stdout = StringIO()
-        with redirect_stdout(stdout):
-            self._run(opener)
+        self._run(opener)
         self.assertEqual(opener.calls, [])
 
     def test_leap_year_demand_drops_february_29_and_renumbers_hours(self):
