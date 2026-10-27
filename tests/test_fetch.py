@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -7,10 +8,14 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO, StringIO
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
+from test_balancing_area_demand import write_demand_files
+
 from flux_match import paths
+from flux_match.balancing_area_demand import PROVINCE_BA_POPULATION
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
@@ -18,6 +23,7 @@ from flux_match.steps.fetch import (
     API_KEY_ENV,
     FetchParams,
     _read_env_file,
+    _write_balancing_area_demand,
     csv_path,
     downloads,
     run,
@@ -155,7 +161,13 @@ class FetchTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.data_dir = Path(tmp.name) / "coders"
+        self.rankings = Path(tmp.name) / "grid_cell_rankings.csv"
         self.dotenv = Path(tmp.name) / ".env"
+        # These tests cache only ON demand; balancing_area_demand needs every province and is
+        # covered by BalancingAreaDemandStepTest and test_balancing_area_demand.py.
+        patcher = mock.patch("flux_match.steps.fetch._write_balancing_area_demand")
+        self.ba_demand_step = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _run(self, opener, cfg=None, environ=None, dotenv_path=None) -> str:
         """Run fetch and return what it wrote to stderr."""
@@ -268,19 +280,60 @@ class FetchTest(unittest.TestCase):
             self._run(RecordingOpener(responses(demand=rows)))
 
     def test_complete_cache_skips_network_and_does_not_need_api_key(self):
-        self.data_dir.mkdir()
-        for name in (
-            "grid_cell_info.csv",
-            "provincial_demand_ON_2024.csv",
-            "solar_capacity_factor_2021.csv",
-            "wind_capacity_factor_2021.csv",
-        ):
-            (self.data_dir / name).write_text("cached\n")
+        self._write_cache()
 
         def opener(request, timeout=None):
             raise AssertionError("should not fetch when files are already local")
 
         self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self.assertTrue(self.rankings.is_file())
+
+    def _write_cache(self) -> None:
+        self.data_dir.mkdir()
+        (self.data_dir / "grid_cell_info.csv").write_text(
+            ",".join(GRID_ROW) + "\n" + ",".join(str(v) for v in GRID_ROW.values()) + "\n"
+        )
+        (self.data_dir / "provincial_demand_ON_2024.csv").write_text("cached\n")
+        (self.data_dir / "solar_capacity_factor_2021.csv").write_bytes(
+            capacity_factor_csv(HOURS_PER_YEAR)
+        )
+        (self.data_dir / "wind_capacity_factor_2021.csv").write_bytes(
+            capacity_factor_csv(HOURS_PER_YEAR, "0.3")
+        )
+
+    def test_rankings_written_after_downloads(self):
+        self._run(RecordingOpener(responses()))
+        rows = read_rows(self.rankings)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["grid_cell"], "1")
+        self.assertAlmostEqual(float(rows[0]["annual_solar_capacity_factor"]), 0.2 * 8760)
+        self.assertAlmostEqual(float(rows[0]["annual_wind_capacity_factor"]), 0.3 * 8760)
+        self.assertEqual(rows[0]["ba_annual_solar_rank"], "1")
+
+    def test_rankings_rebuilt_only_when_older_than_an_input(self):
+        self._write_cache()
+        opener = RecordingOpener({})
+        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self.rankings.write_text("sentinel\n")
+        newest_input = max(p.stat().st_mtime for p in self.data_dir.glob("*.csv"))
+
+        os.utime(self.rankings, (newest_input + 10, newest_input + 10))
+        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self.assertEqual(self.rankings.read_text(), "sentinel\n")
+
+        os.utime(self.rankings, (newest_input - 10, newest_input - 10))
+        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self.assertEqual(read_rows(self.rankings)[0]["grid_cell"], "1")
+
+    def test_balancing_area_demand_step_runs_after_downloads(self):
+        self._run(RecordingOpener(responses()))
+        self.ba_demand_step.assert_called_once_with(self.data_dir)
+
+    def test_exactly_one_capacity_factor_year_required(self):
+        with self.assertRaisesRegex(ConfigError, "must have exactly one year"):
+            FetchParams.from_config(
+                fetch_config(capacity_factor_years=[2020, 2021]).section("fetch")
+            )
 
     def test_empty_existing_file_is_redownloaded(self):
         self.data_dir.mkdir()
@@ -389,6 +442,51 @@ class FetchTest(unittest.TestCase):
             + "\n"
         )
         self.assertEqual(_read_env_file(path), {"OTHER": "1", API_KEY_ENV: "abc"})
+
+
+class BalancingAreaDemandStepTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.data_dir = Path(tmp.name) / "coders"
+        self.dest = Path(tmp.name) / "balancing_area_demand.csv"
+        write_demand_files(self.data_dir, [2022, 2024])
+
+    def _step(self) -> str:
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            _write_balancing_area_demand(self.data_dir)
+        return stdout.getvalue()
+
+    def test_uses_every_cached_year_and_is_not_rebuilt_while_up_to_date(self):
+        self.assertIn("writing balancing_area_demand.csv", self._step())
+        self.assertEqual(list(read_rows(self.dest)[0]), ["balancing_area", "2022", "2024"])
+        self.dest.write_text("sentinel\n")
+        newest_input = max(p.stat().st_mtime for p in self.data_dir.glob("*.csv"))
+        os.utime(self.dest, (newest_input + 10, newest_input + 10))
+        self.assertEqual(self._step(), "")
+        self.assertEqual(self.dest.read_text(), "sentinel\n")
+
+    def test_rebuilt_when_a_demand_file_is_newer(self):
+        self._step()
+        self.dest.write_text("sentinel\n")
+        newest_input = max(p.stat().st_mtime for p in self.data_dir.glob("*.csv"))
+        os.utime(self.dest, (newest_input - 10, newest_input - 10))
+        self._step()
+        all_bas = {ba for populations in PROVINCE_BA_POPULATION.values() for ba in populations}
+        self.assertEqual(len(read_rows(self.dest)), len(all_bas))
+
+    def test_rebuilt_when_empty(self):
+        self.dest.write_text("")
+        os.utime(self.dest, (2e9, 2e9))
+        self._step()
+        self.assertGreater(self.dest.stat().st_size, 0)
+
+    def test_incomplete_year_fails_even_when_output_is_up_to_date(self):
+        self._step()
+        (self.data_dir / "provincial_demand_BC_2022.csv").unlink()
+        with self.assertRaisesRegex(DataError, "provincial_demand_BC_2022.csv"):
+            self._step()
 
 
 if __name__ == "__main__":
