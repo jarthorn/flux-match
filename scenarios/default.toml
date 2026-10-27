@@ -2,7 +2,12 @@
 # in code. A copy is saved as config.toml in each run folder.
 
 [fetch]
-# CODERS endpoint and dataset settings go here once the fetch step is implemented.
+# Two-letter province codes as used by the CODERS API.
+provinces = ["AB", "BC", "MB", "NB", "NL", "NS", "ON", "PE", "QC", "SK"]
+# Calendar years of provincial_demand to download.
+demand_years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+# Wind/solar capacity-factor tables are published per year; CODERS currently has 2021.
+capacity_factor_years = [2021]
 
 [selection]
 strategy = "greedy"
