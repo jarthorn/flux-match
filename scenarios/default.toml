@@ -11,6 +11,10 @@ capacity_factor_years = [2021]
 
 [selection]
 strategy = "greedy"
+# Total solar capacity per balancing area, as a fraction of annual demand
+solar_capacity_ratio  = 1.0
+# Total wind capacity per balancing area, as a fraction of annual demand
+wind_capacity_ratio  = 1.0
 
 [selection.greedy]
 # PLACEHOLDER value: review before relying on results.
@@ -20,6 +24,6 @@ max_capacity_mw_per_cell = 1000.0
 # Calendar years of demand and weather data to dispatch.
 dispatch_years = [2024]
 # Battery state of charge at hour 1, as a fraction of energy capacity.
-initial_state_of_charge_fraction = 0.0
+bess_initial_soc = 0.0
 # Applied entirely on charge: energy stored = energy drawn * efficiency. Discharge is lossless.
-round_trip_efficiency = 0.88
+bess_rte = 0.88

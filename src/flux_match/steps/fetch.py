@@ -9,6 +9,15 @@ February 29 (hour-ending 1417-1440) is dropped and later hours are renumbered, s
 
 A blank demand value is reported on stderr and replaced with the previous hour's value.
 JSON rows that don't all have the same columns are a hard failure, and no file is written.
+
+Next, the step derives data/grid_cell_rankings.csv from grid_cell_info and the capacity-factor
+tables (see grid_cell_rankings.py). It is rebuilt when missing or older than any of its inputs.
+That file is derived from one capacity-factor year, so exactly one must be configured.
+
+Then it derives data/balancing_area_demand.csv: total annual demand per balancing area for every
+demand year (see balancing_area_demand.py). Unlike the downloads, it uses every provincial
+demand file in data/coders/, not only the configured demand_years, and every year found must
+have all provinces. It is rebuilt when missing or older than any of those files.
 """
 
 import csv
@@ -23,8 +32,15 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from flux_match import paths
+from flux_match.balancing_area_demand import (
+    BA_DEMAND_FILENAME,
+    demand_file_paths,
+    find_demand_files,
+    write_balancing_area_demand,
+)
 from flux_match.config import Config
-from flux_match.errors import DataError, report_data_error
+from flux_match.errors import ConfigError, DataError, report_data_error
+from flux_match.grid_cell_rankings import RANKINGS_FILENAME, write_grid_cell_rankings
 from flux_match.io import write_csv
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -70,10 +86,17 @@ class FetchParams:
 
     @classmethod
     def from_config(cls, params: Config) -> Self:
+        capacity_factor_years = tuple(params.get_list("capacity_factor_years", int, unique=True))
+        if len(capacity_factor_years) != 1:
+            # grid_cell_rankings.csv is derived from a single year of capacity factors.
+            raise ConfigError(
+                f"{params.source}: 'fetch.capacity_factor_years' must have exactly one year, "
+                f"got {list(capacity_factor_years)}"
+            )
         return cls(
             provinces=tuple(params.get_list("provinces", str, unique=True)),
             demand_years=tuple(params.get_list("demand_years", int, unique=True)),
-            capacity_factor_years=tuple(params.get_list("capacity_factor_years", int, unique=True)),
+            capacity_factor_years=capacity_factor_years,
         )
 
 
@@ -137,13 +160,40 @@ def run(
         dest = data_dir / item.filename
         if not _already_present(dest):
             missing.append((item, dest))
-    if not missing:
+    if missing:
+        api_key = _coders_api_key(environ, dotenv_path)
+        get = opener or urlopen
+        for item, dest in missing:
+            print(f"downloading {dest.name}", flush=True)
+            _fetch_one(item, dest, api_key, get)
+    _write_rankings(params, data_dir)
+    _write_balancing_area_demand(data_dir)
+
+
+def _write_rankings(params: FetchParams, data_dir: Path) -> None:
+    """Derive grid_cell_rankings.csv if it is missing or older than any of its inputs."""
+    (year,) = params.capacity_factor_years
+    inputs = [
+        csv_path(data_dir, GRID_CELL_TABLE),
+        *(csv_path(data_dir, table, year=year) for table in CAPACITY_FACTOR_TABLES),
+    ]
+    dest = data_dir.parent / RANKINGS_FILENAME
+    if _already_present(dest) and dest.stat().st_mtime >= max(p.stat().st_mtime for p in inputs):
         return
-    api_key = _coders_api_key(environ, dotenv_path)
-    get = opener or urlopen
-    for item, dest in missing:
-        print(f"downloading {dest.name}", flush=True)
-        _fetch_one(item, dest, api_key, get)
+    print(f"writing {dest.name}", flush=True)
+    grid_cell_info, solar, wind = inputs
+    write_grid_cell_rankings(grid_cell_info, solar, wind, dest)
+
+
+def _write_balancing_area_demand(data_dir: Path) -> None:
+    """Derive balancing_area_demand.csv if missing or older than any provincial demand file."""
+    files = find_demand_files(data_dir)
+    dest = data_dir.parent / BA_DEMAND_FILENAME
+    newest = max(p.stat().st_mtime for p in demand_file_paths(files))
+    if _already_present(dest) and dest.stat().st_mtime >= newest:
+        return
+    print(f"writing {dest.name}", flush=True)
+    write_balancing_area_demand(files, dest)
 
 
 def _already_present(path: Path) -> bool:

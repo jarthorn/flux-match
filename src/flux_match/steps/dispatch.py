@@ -1,7 +1,7 @@
 """Step 4: hourly battery dispatch and net demand for each balancing area.
 
 Battery losses are applied entirely on charge: charging with P MW for one hour adds
-P * round_trip_efficiency MWh to storage, and discharge is lossless.
+P * bess_rte MWh to storage, and discharge is lossless.
 """
 
 from dataclasses import dataclass
@@ -15,17 +15,15 @@ from flux_match.run_context import RunContext
 @dataclass(frozen=True)
 class DispatchParams:
     dispatch_years: tuple[int, ...]
-    initial_state_of_charge_fraction: float
-    round_trip_efficiency: float
+    bess_initial_soc: float
+    bess_rte: float
 
     @classmethod
     def from_config(cls, params: Config) -> Self:
         return cls(
             dispatch_years=tuple(params.get_list("dispatch_years", int, unique=True)),
-            initial_state_of_charge_fraction=_fraction(
-                params, "initial_state_of_charge_fraction", allow_zero=True
-            ),
-            round_trip_efficiency=_fraction(params, "round_trip_efficiency", allow_zero=False),
+            bess_initial_soc=_fraction(params, "bess_initial_soc", allow_zero=True),
+            bess_rte=_fraction(params, "bess_rte", allow_zero=False),
         )
 
 

@@ -23,3 +23,15 @@ def write_csv(path: Path, columns: Sequence[str], rows: Iterable[Mapping[str, ob
         writer = csv.DictWriter(f, fieldnames=columns, extrasaction="raise")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_csv_atomic(
+    path: Path, columns: Sequence[str], rows: Iterable[Mapping[str, object]]
+) -> None:
+    """Like write_csv, but `path` is only replaced once the whole file is written."""
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        write_csv(tmp, columns, rows)
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)
