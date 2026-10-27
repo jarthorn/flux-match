@@ -2,8 +2,13 @@
 
 Skipped for any file already present. Writes to the shared data folder rather than a run
 folder, so downloads are reused across runs.
+
+Every hourly table is stored with exactly HOURS_PER_YEAR (8760) hours. In leap years,
+February 29 (hour-ending 1417-1440) is dropped and later hours are renumbered, so hour
+1441 becomes 1417. Other columns, such as local_time, keep their original values.
 """
 
+import csv
 import json
 import os
 from collections.abc import Callable, Mapping
@@ -18,6 +23,7 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.io import write_csv
+from flux_match.schema import HOURS_PER_YEAR
 
 API_BASE = "https://api.sesit.ca"
 API_KEY_ENV = "CODERS_API_KEY"
@@ -27,6 +33,9 @@ CHUNK_SIZE = 1024 * 1024
 GRID_CELL_TABLE = "grid_cell_info"
 DEMAND_TABLE = "provincial_demand"
 CAPACITY_FACTOR_TABLES = ("solar_capacity_factor", "wind_capacity_factor")
+
+LEAP_DAY_HOURS = range(1417, 1441)  # hour-ending of February 29: 59 days * 24 = 1416 before it
+LEAP_YEAR_HOURS = HOURS_PER_YEAR + len(LEAP_DAY_HOURS)
 
 GRID_CELL_COLUMNS = (
     "grid_cell",
@@ -71,6 +80,7 @@ class Download:
     params: dict[str, str | int]
     filename: str
     required_columns: tuple[str, ...] | None = None
+    hour_column: str | None = None
 
 
 def csv_path(data_dir: Path, table: str, **filters: str | int) -> Path:
@@ -95,11 +105,12 @@ def downloads(params: FetchParams) -> list[Download]:
                     {"province": province, "year": year},
                     f"{DEMAND_TABLE}_{province}_{year}.csv",
                     DEMAND_COLUMNS,
+                    hour_column="annual_hour_ending",
                 )
             )
     for year in params.capacity_factor_years:
         for table in CAPACITY_FACTOR_TABLES:
-            items.append(Download(table, {"year": year}, f"{table}_{year}.csv"))
+            items.append(Download(table, {"year": year}, f"{table}_{year}.csv", hour_column="h"))
     return items
 
 
@@ -260,6 +271,49 @@ def _stream_to_file(response: Any, dest: Path) -> None:
         raise DataError(f"CODERS returned an empty file for {dest.name}")
 
 
+def _drop_leap_day(path: Path, hour_column: str, name: str) -> None:
+    """Rewrite a leap-year hourly CSV without February 29. Streams rows, since
+    capacity-factor files are hundreds of MB."""
+    with path.open(newline="") as f:
+        hours = sum(1 for _ in csv.reader(f)) - 1
+    if hours == HOURS_PER_YEAR:
+        return
+    if hours != LEAP_YEAR_HOURS:
+        raise DataError(
+            f"{name}: expected {HOURS_PER_YEAR} or {LEAP_YEAR_HOURS} hours, got {hours}"
+        )
+
+    out = path.with_name(path.name + ".noleap")
+    try:
+        with path.open(newline="") as src, out.open("w", newline="") as dst:
+            reader = csv.reader(src)
+            writer = csv.writer(dst)
+            header = next(reader)
+            if hour_column not in header:
+                raise DataError(f"{name}: missing hour column '{hour_column}'")
+            hour_i = header.index(hour_column)
+            time_i = header.index("local_time") if "local_time" in header else None
+            writer.writerow(header)
+            for expected, row in enumerate(reader, start=1):
+                if row[hour_i] != str(expected):
+                    raise DataError(
+                        f"{name}: expected hour {expected} on row {expected}, got {row[hour_i]!r}"
+                    )
+                if expected in LEAP_DAY_HOURS:
+                    if time_i is not None and row[time_i][5:10] != "02-29":
+                        raise DataError(
+                            f"{name}: hour {expected} should be February 29, "
+                            f"got local_time {row[time_i]!r}"
+                        )
+                    continue
+                if expected > LEAP_DAY_HOURS[-1]:
+                    row[hour_i] = str(expected - len(LEAP_DAY_HOURS))
+                writer.writerow(row)
+        out.replace(path)
+    finally:
+        out.unlink(missing_ok=True)
+
+
 def _fetch_one(item: Download, dest: Path, api_key: str, opener: Opener) -> None:
     tmp = dest.with_name(dest.name + ".tmp")
     tmp.unlink(missing_ok=True)
@@ -270,6 +324,8 @@ def _fetch_one(item: Download, dest: Path, api_key: str, opener: Opener) -> None
             else:
                 records = _json_records(response.read(), item)
                 write_csv(tmp, tuple(records[0].keys()), records)
+        if item.hour_column:
+            _drop_leap_day(tmp, item.hour_column, dest.name)
         tmp.replace(dest)
     except Exception:
         tmp.unlink(missing_ok=True)
