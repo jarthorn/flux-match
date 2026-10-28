@@ -17,7 +17,7 @@ failure and no output file is written.
 
 import csv
 import statistics
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,49 +54,98 @@ class CapacitySummary:
 
 def summarize_capacity_factors(path: Path) -> CapacitySummary:
     """Stream a capacity-factor table, returning each cell's annual sum and median daily sum."""
-    name = path.name
-    with path.open(newline="") as f:
-        reader = csv.reader(f)
-        header = next(reader, None)
-        if not header or header[0] != HOUR_COLUMN:
-            raise DataError(f"{name}: first column must be '{HOUR_COLUMN}', got {header[:1]!r}")
-        cells = tuple(header[1:])
-        if len(set(cells)) != len(cells):
-            duplicates = sorted({c for c in cells if cells.count(c) > 1})
-            raise DataError(f"{name}: duplicate grid cell columns {duplicates}")
-
-        annual = [0.0] * len(cells)
-        day_sums = [0.0] * len(cells)
-        daily: list[list[float]] = []
-        hours = 0
-        for hours, row in enumerate(reader, start=1):
-            if hours > HOURS_PER_YEAR:
-                raise DataError(f"{name}: more than {HOURS_PER_YEAR} hourly rows")
-            values = _parse_hour(row, hours, cells, name)
-            for i, v in enumerate(values):
-                annual[i] += v
-                day_sums[i] += v
-            if hours % HOURS_PER_DAY == 0:
-                daily.append(day_sums)
-                day_sums = [0.0] * len(cells)
-        if hours != HOURS_PER_YEAR:
-            raise DataError(f"{name}: expected {HOURS_PER_YEAR} hourly rows, got {hours}")
+    cells = capacity_factor_cells(path)
+    annual = [0.0] * len(cells)
+    day_sums = [0.0] * len(cells)
+    daily: list[list[float]] = []
+    hours = 0
+    for hours, values in enumerate(iter_hourly_capacity_factors(path, cells), start=1):
+        for i, v in enumerate(values):
+            annual[i] += v
+            day_sums[i] += v
+        if hours % HOURS_PER_DAY == 0:
+            daily.append(day_sums)
+            day_sums = [0.0] * len(cells)
 
     if len(daily) != DAYS_PER_YEAR:
-        raise AssertionError(f"{name}: {len(daily)} days from {hours} hours")
+        raise AssertionError(f"{path.name}: {len(daily)} days from {hours} hours")
     median_daily = tuple(statistics.median(day) for day in zip(*daily, strict=True))
     return CapacitySummary(cells, tuple(annual), median_daily)
 
 
-def _parse_hour(row: list[str], hour: int, cells: Sequence[str], name: str) -> list[float]:
-    if len(row) != len(cells) + 1:
+def capacity_factor_cells(path: Path) -> tuple[str, ...]:
+    """Grid-cell ids from a capacity-factor header, in column order."""
+    name = path.name
+    if not path.is_file():
+        raise DataError(f"Input file not found: {path}")
+    with path.open(newline="") as f:
+        header = next(csv.reader(f), None)
+    return _header_cells(header, name)
+
+
+def iter_hourly_capacity_factors(
+    path: Path,
+    cells: Sequence[str],
+    *,
+    hours_in_year: int = HOURS_PER_YEAR,
+) -> Iterator[list[float]]:
+    """Yield `cells` capacity factors for each hour, in that order.
+
+    Extra columns in the file are ignored. A requested cell missing from the header is a
+    hard failure. Values must be in [0, 1].
+    """
+    name = path.name
+    if not path.is_file():
+        raise DataError(f"Input file not found: {path}")
+    with path.open(newline="") as f:
+        reader = csv.reader(f)
+        header = next(reader, None)
+        file_cells = _header_cells(header, name)
+        index = {cell: i for i, cell in enumerate(file_cells)}
+        missing = [cell for cell in dict.fromkeys(cells) if cell not in index]
+        if missing:
+            raise DataError(
+                f"{name}: missing grid cell columns "
+                f"{_abbreviate(sorted(missing, key=_cell_sort_key))}"
+            )
+        columns = [index[cell] for cell in cells]
+        hours = 0
+        for hours, row in enumerate(reader, start=1):
+            if hours > hours_in_year:
+                raise DataError(f"{name}: more than {hours_in_year} hourly rows")
+            yield _parse_selected_hour(row, hours, file_cells, columns, cells, name)
+        if hours != hours_in_year:
+            raise DataError(f"{name}: expected {hours_in_year} hourly rows, got {hours}")
+
+
+def _header_cells(header: list[str] | None, name: str) -> tuple[str, ...]:
+    if not header or header[0] != HOUR_COLUMN:
+        got = header[:1] if header else header
+        raise DataError(f"{name}: first column must be '{HOUR_COLUMN}', got {got!r}")
+    cells = tuple(header[1:])
+    if len(set(cells)) != len(cells):
+        duplicates = sorted({c for c in cells if cells.count(c) > 1})
+        raise DataError(f"{name}: duplicate grid cell columns {duplicates}")
+    return cells
+
+
+def _parse_selected_hour(
+    row: list[str],
+    hour: int,
+    file_cells: Sequence[str],
+    columns: Sequence[int],
+    cells: Sequence[str],
+    name: str,
+) -> list[float]:
+    if len(row) != len(file_cells) + 1:
         raise DataError(
-            f"{name}: row for hour {hour} has {len(row)} fields, expected {len(cells) + 1}"
+            f"{name}: row for hour {hour} has {len(row)} fields, expected {len(file_cells) + 1}"
         )
     if row[0] != str(hour):
         raise DataError(f"{name}: expected hour {hour} on row {hour}, got {row[0]!r}")
     values = []
-    for cell, text in zip(cells, row[1:], strict=True):
+    for cell, column in zip(cells, columns, strict=True):
+        text = row[column + 1]
         try:
             value = float(text)
         except ValueError:

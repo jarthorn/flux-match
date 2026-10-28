@@ -11,3 +11,12 @@ DISPATCH_COLUMNS = (
     "battery_output_mw",
     "net_demand_mw",
 )
+
+# Hourly wind and solar generation per balancing area, written by the preprocess step.
+VRE_HOURLY_COLUMNS = (
+    "balancing_area",
+    "hour",
+    "wind_mw",
+    "solar_mw",
+    "variable_generation_mw",
+)
