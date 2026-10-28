@@ -26,5 +26,8 @@ max_solar_capacity_mw_per_cell = 500
 dispatch_years = [2024]
 # Battery state of charge at hour 1, as a fraction of energy capacity.
 bess_initial_soc = 0.0
-# Applied entirely on charge: energy stored = energy drawn * efficiency. Discharge is lossless.
+# Battery round-trip efficiency.Applied entirely on charge:
+# energy stored = energy drawn * efficiency. Discharge is lossless.
 bess_rte = 0.88
+# Total battery storage capacity, as a fraction of most recent annual demand
+bess_capacity_ratio = 0.2
