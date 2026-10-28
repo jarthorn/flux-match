@@ -126,11 +126,8 @@ class DispatchHourTest(unittest.TestCase):
         # 10 MWh of room at 50% efficiency takes 20 MW drawn.
         self.assertEqual(self.step(-40.0, 90.0), (-20.0, 100.0))
 
-    def test_full_battery_is_idle_with_positive_zero_output(self) -> None:
-        output, soc = self.step(-40.0, 100.0)
-        self.assertEqual(soc, 100.0)
-        self.assertEqual(math.copysign(1.0, output), 1.0)
-        self.assertEqual(output, 0.0)
+    def test_full_battery_is_idle(self) -> None:
+        self.assertEqual(self.step(-40.0, 100.0), (0.0, 100.0))
 
     def test_zero_capacity_battery_does_nothing(self) -> None:
         empty = Battery(0.0, 0.0)
@@ -168,6 +165,20 @@ class DispatchRowsTest(unittest.TestCase):
         rows = list(dispatch_rows(2024, hours, {"East.a": Battery(100.0, 50.0)}, params()))
         self.assertEqual(rows[0]["battery_output_mw"], -50.0)
         self.assertEqual(rows[0]["net_demand_mw"], -40.0)
+
+    def test_output_rounded_to_whole_mw_but_battery_tracked_at_full_precision(self) -> None:
+        hours = [
+            PairedHour("East.a", 1, 0.0, 0.4),  # stores 0.2 MWh, output rounds to 0
+            PairedHour("East.a", 2, 0.0, 0.4),
+            PairedHour("East.a", 3, 0.0, 0.4),
+            PairedHour("East.a", 4, 0.6, 0.0),  # 0.6 MWh stored, all discharged
+            PairedHour("East.a", 5, 0.0, 0.0),
+        ]
+        rows = list(dispatch_rows(2024, hours, {"East.a": Battery(100.0, 50.0)}, params()))
+        self.assertEqual([r["battery_output_mw"] for r in rows], [0, 0, 0, 1, 0])
+        self.assertEqual([r["net_demand_mw"] for r in rows], [0, 0, 0, 0, 0])
+        self.assertTrue(all(type(r[c]) is int for r in rows for c in DISPATCH_COLUMNS[3:]))
+        self.assertEqual(str(rows[0]["battery_output_mw"]), "0")
 
     def test_balancing_area_without_battery_fails(self) -> None:
         hours = [PairedHour("Nowhere.a", 1, 10.0, 0.0)]
