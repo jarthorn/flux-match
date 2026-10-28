@@ -2,6 +2,8 @@
 
 # Leap years are stored without February 29 so that years from different sources line up.
 HOURS_PER_YEAR = 8760
+# After dropping February 29, this hour is 00:00 on March 1 in every year.
+FIRST_HOUR_AFTER_LEAP_DAY = 1417
 
 DISPATCH_COLUMNS = (
     "balancing_area",
