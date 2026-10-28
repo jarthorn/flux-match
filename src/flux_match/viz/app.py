@@ -1,16 +1,19 @@
 """Streamlit dashboard for a single run.
 
-Usage: bin/viz output/<run-folder>
+Usage: bin/viz [output/<run-folder>]
+
+With no folder, opens the newest run in output/.
 """
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import streamlit as st
 
 from flux_match import paths
 from flux_match.errors import FluxMatchError
-from flux_match.run_context import open_run
+from flux_match.run_context import latest_run_dir, open_run, run_dir_timestamp
 from flux_match.viz.charts import (
     HourlyTable,
     build_figure,
@@ -32,13 +35,22 @@ def _cached_tables(
     return load_dashboard_tables(ctx, year, Path(data_dir))
 
 
+def _select_run_dir(argv: Sequence[str], output_dir: Path = paths.OUTPUT_DIR) -> Path:
+    if len(argv) == 1:
+        run_dir = latest_run_dir(output_dir)
+        stamp = run_dir_timestamp(run_dir)
+        print(f"No output specified. Opening dashboard on most recent model run {stamp}.")
+        return run_dir
+    if len(argv) == 2:
+        return Path(argv[1])
+    raise FluxMatchError("Usage: bin/viz [output/<run-folder>]")
+
+
 def main() -> None:
     st.set_page_config(page_title="Flux Match", layout="wide")
-    if len(sys.argv) != 2:
-        st.error("Usage: bin/viz output/<run-folder>")
-        st.stop()
     try:
-        ctx = open_run(Path(sys.argv[1]))
+        run_dir = _select_run_dir(sys.argv)
+        ctx = open_run(run_dir)
         ctx.require_complete("dispatch")
         years = ctx.config.section("dispatch").get_list("dispatch_years", int, unique=True)
     except FluxMatchError as e:

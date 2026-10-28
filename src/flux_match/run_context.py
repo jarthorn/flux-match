@@ -93,6 +93,30 @@ def open_run(run_dir: Path) -> RunContext:
     return RunContext(run_dir, Config.load(run_dir / CONFIG_NAME))
 
 
+def latest_run_dir(output_dir: Path = paths.OUTPUT_DIR) -> Path:
+    """The run folder whose name sorts last (YYYYMMDD-HHMM prefix, so that is the newest)."""
+    if not output_dir.is_dir():
+        raise RunStateError(f"Output folder not found: {output_dir}")
+    runs = [
+        path
+        for path in output_dir.iterdir()
+        if path.is_dir() and (path / CONFIG_NAME).is_file() and (path / MANIFEST_NAME).is_file()
+    ]
+    if not runs:
+        raise RunStateError(f"No run folders found in {output_dir}")
+    return max(runs, key=lambda path: path.name)
+
+
+def run_dir_timestamp(run_dir: Path) -> str:
+    """The YYYYMMDD-HHMM prefix of a run folder name, or the whole name if it does not match."""
+    prefix = run_dir.name[:13]
+    try:
+        datetime.strptime(prefix, paths.TIMESTAMP_FORMAT)
+    except ValueError:
+        return run_dir.name
+    return prefix
+
+
 def _git_info() -> dict[str, str | bool] | None:
     def git(*args: str) -> str:
         return subprocess.run(

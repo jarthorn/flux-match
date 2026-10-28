@@ -1,12 +1,15 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 
-from flux_match.errors import DataError
+from flux_match.errors import DataError, FluxMatchError
 from flux_match.io import write_csv
 from flux_match.run_context import create_run
 from flux_match.schema import FIRST_HOUR_AFTER_LEAP_DAY, HOURS_PER_YEAR
+from flux_match.viz.app import _select_run_dir
 from flux_match.viz.charts import (
     DEFAULT_AUTHORITY,
     build_figure,
@@ -304,6 +307,33 @@ class BuildFigureTest(unittest.TestCase):
         ]
         for previous, current in zip(domains[:-1], domains[1:], strict=True):
             self.assertLessEqual(current[1], previous[0])
+
+
+class SelectRunDirTest(TempDirTest):
+    def test_no_argument_prints_notice_and_opens_the_newest_run(self) -> None:
+        scenario = self.write("default.toml", SCENARIO)
+        create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 21, 30))
+        newest = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 21, 47))
+        captured = StringIO()
+        with redirect_stdout(captured):
+            run_dir = _select_run_dir(["app.py"], self.dir / "output")
+        self.assertEqual(run_dir, newest.run_dir)
+        self.assertEqual(
+            captured.getvalue(),
+            "No output specified. Opening dashboard on most recent model run 20261027-2147.\n",
+        )
+
+    def test_explicit_folder_is_used_without_a_notice(self) -> None:
+        chosen = self.dir / "output" / "chosen"
+        captured = StringIO()
+        with redirect_stdout(captured):
+            run_dir = _select_run_dir(["app.py", str(chosen)], self.dir / "output")
+        self.assertEqual(run_dir, chosen)
+        self.assertEqual(captured.getvalue(), "")
+
+    def test_extra_arguments_are_rejected(self) -> None:
+        with self.assertRaisesRegex(FluxMatchError, "Usage: bin/viz"):
+            _select_run_dir(["app.py", "a", "b"], self.dir / "output")
 
 
 if __name__ == "__main__":
