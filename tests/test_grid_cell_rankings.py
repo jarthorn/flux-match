@@ -8,6 +8,7 @@ from flux_match.grid_cell_rankings import (
     RANKINGS_COLUMNS,
     CapacitySummary,
     build_rankings,
+    iter_hourly_capacity_factors,
     rank_within_groups,
     read_grid_cells,
     summarize_capacity_factors,
@@ -126,6 +127,17 @@ class SummarizeTest(TempDirTest):
     def test_missing_hour_column_fails(self):
         with self.assertRaisesRegex(DataError, "first column must be 'h'"):
             summarize_capacity_factors(self.write("w.csv", "hour,1\n1,0.1\n"))
+
+    def test_iter_reads_requested_cells_and_ignores_other_columns(self):
+        # Cell 2 is outside 0-1; it is not requested, so it must not be validated.
+        path = self.write("w.csv", "h,1,2\n1,0.5,9\n2,0.25,9\n3,0.0,9\n")
+        values = list(iter_hourly_capacity_factors(path, ["1"], hours_in_year=3))
+        self.assertEqual(values, [[0.5], [0.25], [0.0]])
+
+    def test_iter_fails_when_a_requested_cell_is_missing(self):
+        path = self.write("w.csv", hourly_csv({"1": [0.1] * 3}, hours=3))
+        with self.assertRaisesRegex(DataError, r"missing grid cell columns \[2\]"):
+            list(iter_hourly_capacity_factors(path, ["1", "2"], hours_in_year=3))
 
 
 class ReadGridCellsTest(TempDirTest):
