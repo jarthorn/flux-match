@@ -21,11 +21,23 @@ Writes dispatch_hourly_<year>.csv with DISPATCH_COLUMNS, where battery output is
 discharge and negative for charge, and net demand = demand - variable generation - battery output.
 Output values are rounded to whole MW, the precision of the CODERS demand data. The battery is
 simulated at full precision, so the rounded columns of a row may not add up exactly.
+
+Also records per-balancing-area statistics over all dispatch years in run.json under
+"dispatch_stats", computed at full precision:
+    net_demand_pct              shortfall hours' net demand, as a percentage of total demand
+    curtailment_pct             surplus the battery could not absorb, as a percentage of variable
+                                generation (null when the balancing area has none)
+    satisfied_demand_hours_pct  percentage of hours with net demand <= 0
+    peak_net_demand_mw          highest hourly net demand
+Each statistic except peak_net_demand_mw also has a "total" entry over all balancing areas. Its
+energy percentages are weighted by energy, and satisfied_demand_hours_pct is the percentage of
+all balancing-area-hours.
 """
 
 import itertools
 import math
-from collections.abc import Iterable, Iterator, Mapping
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple, Self
@@ -38,6 +50,8 @@ from flux_match.grid_cell_rankings import HOURS_PER_DAY
 from flux_match.io import iter_csv, write_csv_atomic
 from flux_match.run_context import RunContext
 from flux_match.schema import DISPATCH_COLUMNS, HOURS_PER_YEAR
+
+STATS_TOTAL_KEY = "total"
 
 
 @dataclass(frozen=True)
@@ -78,6 +92,44 @@ class PairedHour(NamedTuple):
     variable_generation_mw: float
 
 
+@dataclass
+class DispatchTotals:
+    """Running totals for one balancing area, over every hour of every dispatch year."""
+
+    demand_mwh: float = 0.0
+    variable_generation_mwh: float = 0.0
+    shortfall_mwh: float = 0.0
+    curtailment_mwh: float = 0.0
+    satisfied_hours: int = 0
+    hours: int = 0
+    peak_net_demand_mw: float = -math.inf
+
+    @classmethod
+    def combine(cls, parts: Iterable[Self]) -> Self:
+        """Totals summed across balancing areas; the peak is the highest single-area peak."""
+        parts = list(parts)
+        return cls(
+            demand_mwh=sum(t.demand_mwh for t in parts),
+            variable_generation_mwh=sum(t.variable_generation_mwh for t in parts),
+            shortfall_mwh=sum(t.shortfall_mwh for t in parts),
+            curtailment_mwh=sum(t.curtailment_mwh for t in parts),
+            satisfied_hours=sum(t.satisfied_hours for t in parts),
+            hours=sum(t.hours for t in parts),
+            peak_net_demand_mw=max((t.peak_net_demand_mw for t in parts), default=-math.inf),
+        )
+
+    def add_hour(self, demand_mw: float, variable_generation_mw: float, net_mw: float) -> None:
+        self.demand_mwh += demand_mw
+        self.variable_generation_mwh += variable_generation_mw
+        self.peak_net_demand_mw = max(self.peak_net_demand_mw, net_mw)
+        if net_mw > 0:
+            self.shortfall_mwh += net_mw
+        else:
+            self.curtailment_mwh -= net_mw
+            self.satisfied_hours += 1
+        self.hours += 1
+
+
 def run(
     ctx: RunContext,
     data_dir: Path = paths.DATA_DIR,
@@ -87,6 +139,7 @@ def run(
     params = DispatchParams.from_config(ctx.config.section("dispatch"))
     _, annual_demand = read_ba_demand(data_dir / paths.BA_DEMAND_FILENAME)
     batteries = size_batteries(annual_demand, params.bess_capacity_ratio, params.bess_duration)
+    totals: defaultdict[str, DispatchTotals] = defaultdict(DispatchTotals)
     for year in params.dispatch_years:
         demand_path = data_dir / paths.ba_demand_hourly_filename(year)
         if not demand_path.is_file():
@@ -97,7 +150,41 @@ def run(
         dest = ctx.dispatch_hourly_path(year)
         print(f"writing {dest.name}", flush=True)
         hours = paired_hours(demand_path, ctx.vre_hourly_path, hours_in_year=hours_in_year)
-        write_csv_atomic(dest, DISPATCH_COLUMNS, dispatch_rows(year, hours, batteries, params))
+        rows = dispatch_rows(year, hours, batteries, params, totals=totals)
+        write_csv_atomic(dest, DISPATCH_COLUMNS, rows)
+    ctx.record_stats("dispatch", dispatch_stats(totals))
+
+
+def dispatch_stats(totals: Mapping[str, DispatchTotals]) -> dict[str, object]:
+    """run.json statistics, keyed by statistic, then balancing area or STATS_TOTAL_KEY."""
+    if not totals:
+        raise DataError("No balancing areas were dispatched")
+    if STATS_TOTAL_KEY in totals:
+        raise DataError(f"A balancing area is named {STATS_TOTAL_KEY!r}, which is reserved")
+    if len({t.hours for t in totals.values()}) != 1:
+        hours = {ba: t.hours for ba, t in totals.items()}
+        raise DataError(f"Balancing areas were dispatched for different numbers of hours: {hours}")
+    for ba, t in totals.items():
+        if t.demand_mwh <= 0:
+            raise DataError(f"{ba}: total hourly demand is not positive: {t.demand_mwh}")
+    with_total = {**totals, STATS_TOTAL_KEY: DispatchTotals.combine(totals.values())}
+    return {
+        "net_demand_pct": {k: _pct(t.shortfall_mwh, t.demand_mwh) for k, t in with_total.items()},
+        "curtailment_pct": {
+            k: _pct(t.curtailment_mwh, t.variable_generation_mwh)
+            if t.variable_generation_mwh
+            else None
+            for k, t in with_total.items()
+        },
+        "satisfied_demand_hours_pct": {
+            k: _pct(t.satisfied_hours, t.hours) for k, t in with_total.items()
+        },
+        "peak_net_demand_mw": {ba: round(t.peak_net_demand_mw) for ba, t in totals.items()},
+    }
+
+
+def _pct(part: float, whole: float) -> float:
+    return round(100 * part / whole, 2)
 
 
 def size_batteries(
@@ -132,8 +219,13 @@ def dispatch_rows(
     hours: Iterable[PairedHour],
     batteries: Mapping[str, Battery],
     params: DispatchParams,
+    *,
+    totals: MutableMapping[str, DispatchTotals] | None = None,
 ) -> Iterator[dict[str, object]]:
-    """DISPATCH_COLUMNS rows, resetting the battery at the start of each balancing area."""
+    """DISPATCH_COLUMNS rows, resetting the battery at the start of each balancing area.
+
+    If `totals` is given, each hour is also added to its balancing area's entry.
+    """
     for ba, ba_hours in itertools.groupby(hours, key=lambda h: h.balancing_area):
         battery = batteries.get(ba)
         if battery is None:
@@ -142,13 +234,16 @@ def dispatch_rows(
         for h in ba_hours:
             shortfall = h.demand_mw - h.variable_generation_mw
             battery_output, soc = dispatch_hour(shortfall, soc, battery, params.bess_rte)
+            net_demand = shortfall - battery_output
+            if totals is not None:
+                totals[ba].add_hour(h.demand_mw, h.variable_generation_mw, net_demand)
             yield {
                 "balancing_area": ba,
                 "year": year,
                 "hour": h.hour,
                 "variable_generation_mw": round(h.variable_generation_mw),
                 "battery_output_mw": round(battery_output),
-                "net_demand_mw": round(shortfall - battery_output),
+                "net_demand_mw": round(net_demand),
             }
 
 

@@ -49,6 +49,8 @@ class RunContext:
         manifest["completed_steps"] = [
             s for s in manifest["completed_steps"] if RUN_STEPS.index(s) < index
         ]
+        for stale in RUN_STEPS[index:]:
+            manifest.pop(_stats_key(stale), None)
         self._write_manifest(manifest)
 
     def complete_step(self, step: str) -> None:
@@ -56,11 +58,26 @@ class RunContext:
         manifest["completed_steps"].append(step)
         self._write_manifest(manifest)
 
+    def record_stats(self, step: str, stats: dict[str, Any]) -> None:
+        """Store summary statistics for `step` in the manifest, as "<step>_stats"."""
+        if step not in RUN_STEPS:
+            raise ValueError(f"Unknown run step: {step}")
+        manifest = self._read_manifest()
+        manifest[_stats_key(step)] = stats
+        self._write_manifest(manifest)
+
+    def read_stats(self, step: str) -> dict[str, Any] | None:
+        return self._read_manifest().get(_stats_key(step))
+
     def _read_manifest(self) -> dict[str, Any]:
         return json.loads((self.run_dir / MANIFEST_NAME).read_text())
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
         (self.run_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+
+
+def _stats_key(step: str) -> str:
+    return f"{step}_stats"
 
 
 def create_run(

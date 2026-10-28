@@ -58,6 +58,18 @@ class RunContextTest(unittest.TestCase):
             with self.assertRaises(RunStateError):
                 ctx.require_complete(step)
 
+    def test_rerunning_a_step_discards_its_and_later_stats(self):
+        ctx = create_run(self.scenario, self.output, STARTED)
+        for step in ("select", "preprocess", "dispatch"):
+            ctx.begin_step(step)
+            ctx.record_stats(step, {"step": step})
+            ctx.complete_step(step)
+
+        ctx.begin_step("preprocess")
+        self.assertEqual(ctx.read_stats("select"), {"step": "select"})
+        self.assertIsNone(ctx.read_stats("preprocess"))
+        self.assertIsNone(ctx.read_stats("dispatch"))
+
     def test_open_run_rejects_non_run_folder(self):
         with self.assertRaises(RunStateError):
             open_run(self.root)
