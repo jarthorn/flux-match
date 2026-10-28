@@ -26,7 +26,7 @@ The program is divided into the following steps:
 
 ## Usage
 
-Each run is configured by a scenario file, `scenarios/<name>.toml`, which sets every parameter the run uses, including strategy-specific ones. Steps 2-4 write to a new run folder, `output/<YYYYMMDD-HHMM>-<scenario>/`, which also holds a `config.toml` snapshot of the scenario and a `run.json` manifest (git commit, completed steps).
+Each run is configured by a scenario file, `scenarios/<name>.toml`, which sets every parameter the run uses, including strategy-specific ones. Steps 2-4 write to a new run folder, `output/<YYYYMMDD-HHMM>-<scenario>/`, which also holds a `config.toml` snapshot of the scenario and a `run.json` manifest (git commit, completed steps, and per-balancing-area `dispatch_stats` for comparing site selection strategies).
 
 ```bash
 bin/run [--scenario NAME]                            # steps 1-4 in a new run folder (default scenario: "default")

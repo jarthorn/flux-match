@@ -1,6 +1,7 @@
 import math
 import tempfile
 import unittest
+from collections import defaultdict
 from contextlib import redirect_stdout
 from datetime import datetime
 from io import StringIO
@@ -15,9 +16,11 @@ from flux_match.schema import DISPATCH_COLUMNS, HOURS_PER_YEAR
 from flux_match.steps.dispatch import (
     Battery,
     DispatchParams,
+    DispatchTotals,
     PairedHour,
     dispatch_hour,
     dispatch_rows,
+    dispatch_stats,
     paired_hours,
     run,
     size_batteries,
@@ -180,10 +183,62 @@ class DispatchRowsTest(unittest.TestCase):
         self.assertTrue(all(type(r[c]) is int for r in rows for c in DISPATCH_COLUMNS[3:]))
         self.assertEqual(str(rows[0]["battery_output_mw"]), "0")
 
+    def test_totals_accumulate_at_full_precision(self) -> None:
+        hours = [
+            PairedHour("East.a", 1, 10.0, 100.0),  # 90 surplus, 50 charged, 40 curtailed
+            PairedHour("East.a", 2, 60.4, 0.0),  # 60.4 short, 25 MWh stored, 35.4 unmet
+            PairedHour("East.a", 3, 0.3, 0.0),  # 0.3 unmet: rounds to 0 but is not satisfied
+        ]
+        totals: defaultdict[str, DispatchTotals] = defaultdict(DispatchTotals)
+        list(dispatch_rows(2024, hours, {"East.a": Battery(100.0, 50.0)}, params(), totals=totals))
+        t = totals["East.a"]
+        self.assertAlmostEqual(t.demand_mwh, 70.7)
+        self.assertAlmostEqual(t.variable_generation_mwh, 100.0)
+        self.assertAlmostEqual(t.shortfall_mwh, 35.7)
+        self.assertAlmostEqual(t.curtailment_mwh, 40.0)
+        self.assertEqual((t.satisfied_hours, t.hours), (1, 3))
+
     def test_balancing_area_without_battery_fails(self) -> None:
         hours = [PairedHour("Nowhere.a", 1, 10.0, 0.0)]
         with self.assertRaisesRegex(DataError, "Nowhere.a: no annual demand"):
             list(dispatch_rows(2024, hours, {}, params()))
+
+
+class DispatchStatsTest(unittest.TestCase):
+    def test_per_balancing_area_and_energy_weighted_total(self) -> None:
+        totals = {
+            "East.a": DispatchTotals(200.0, 50.0, 30.0, 10.0, 4, 6, peak_net_demand_mw=12.4),
+            "West.a": DispatchTotals(100.0, 0.0, 100.0, 0.0, 0, 6, peak_net_demand_mw=-3.0),
+        }
+        self.assertEqual(
+            dispatch_stats(totals),
+            {
+                # Total: 130 of 300 MWh demand unmet; 10 of 50 MWh generation curtailed.
+                "net_demand_pct": {"East.a": 15.0, "West.a": 100.0, "total": 43.33},
+                "curtailment_pct": {"East.a": 20.0, "West.a": None, "total": 20.0},
+                "satisfied_demand_hours_pct": {"East.a": 66.67, "West.a": 0.0, "total": 33.33},
+                "peak_net_demand_mw": {"East.a": 12, "West.a": -3},
+            },
+        )
+
+    def test_peak_is_highest_full_precision_net_demand(self) -> None:
+        totals = DispatchTotals()
+        for net in (-5.0, 7.6, 2.0):
+            totals.add_hour(10.0, 10.0 - net, net)
+        self.assertEqual(totals.peak_net_demand_mw, 7.6)
+
+    def test_zero_demand_fails(self) -> None:
+        with self.assertRaisesRegex(DataError, "East.a: total hourly demand is not positive"):
+            dispatch_stats({"East.a": DispatchTotals(0.0, 5.0, 0.0, 5.0, 3, 3)})
+
+    def test_balancing_area_named_total_fails(self) -> None:
+        with self.assertRaisesRegex(DataError, "'total', which is reserved"):
+            dispatch_stats({"total": DispatchTotals(1.0, hours=1)})
+
+    def test_unequal_hour_counts_fail(self) -> None:
+        totals = {"East.a": DispatchTotals(1.0, hours=3), "West.a": DispatchTotals(1.0, hours=2)}
+        with self.assertRaisesRegex(DataError, "different numbers of hours"):
+            dispatch_stats(totals)
 
 
 class PairedHoursTest(TempDirTest):
@@ -292,6 +347,19 @@ class DispatchRunTest(TempDirTest):
         self.assertEqual(float(rows[1]["net_demand_mw"]), 40.0)
         self.assertEqual(float(rows[2]["battery_output_mw"]), 0.0)
         self.assertEqual(float(rows[2]["net_demand_mw"]), 300.0)
+
+    def test_records_stats_in_run_manifest(self) -> None:
+        self._run()
+        # 340 MWh unmet of 500 MWh demand; 80 MWh curtailed of 300 MWh generated.
+        self.assertEqual(
+            self.ctx.read_stats("dispatch"),
+            {
+                "net_demand_pct": {"East.a": 68.0, "total": 68.0},
+                "curtailment_pct": {"East.a": 26.67, "total": 26.67},
+                "satisfied_demand_hours_pct": {"East.a": 33.33, "total": 33.33},
+                "peak_net_demand_mw": {"East.a": 300},
+            },
+        )
 
     def test_missing_hourly_demand_year_fails_with_hint(self) -> None:
         (self.data_dir / paths.ba_demand_hourly_filename(2024)).unlink()
