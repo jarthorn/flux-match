@@ -121,8 +121,8 @@ def dispatch_hour(
     `shortfall_mw` is demand minus variable generation; negative means surplus to store.
     """
     if shortfall_mw > 0:
-        output = min(shortfall_mw, battery.power_mw, soc_mwh)
-        return output, soc_mwh - output
+        battery_output = min(shortfall_mw, battery.power_mw, soc_mwh)
+        return battery_output, soc_mwh - battery_output
     drawn = min(-shortfall_mw, battery.power_mw, (battery.capacity_mwh - soc_mwh) / rte)
     return -drawn, min(battery.capacity_mwh, soc_mwh + drawn * rte)
 
@@ -141,14 +141,14 @@ def dispatch_rows(
         soc = params.bess_initial_soc * battery.capacity_mwh
         for h in ba_hours:
             shortfall = h.demand_mw - h.variable_generation_mw
-            output, soc = dispatch_hour(shortfall, soc, battery, params.bess_rte)
+            battery_output, soc = dispatch_hour(shortfall, soc, battery, params.bess_rte)
             yield {
                 "balancing_area": ba,
                 "year": year,
                 "hour": h.hour,
                 "variable_generation_mw": round(h.variable_generation_mw),
-                "battery_output_mw": round(output),
-                "net_demand_mw": round(shortfall - output),
+                "battery_output_mw": round(battery_output),
+                "net_demand_mw": round(shortfall - battery_output),
             }
 
 
