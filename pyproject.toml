@@ -11,7 +11,10 @@ flux-match = "flux_match.cli:main"
 
 [dependency-groups]
 dev = ["ruff"]
-viz = ["streamlit"]
+viz = [
+    "plotly>=7.1.0",
+    "streamlit",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14"]
