@@ -327,7 +327,7 @@ class FetchTest(unittest.TestCase):
 
     def test_balancing_area_demand_step_runs_after_downloads(self):
         self._run(RecordingOpener(responses()))
-        self.ba_demand_step.assert_called_once_with(self.data_dir)
+        self.ba_demand_step.assert_called_once_with(self.data_dir, (2024,))
 
     def test_exactly_one_capacity_factor_year_required(self):
         with self.assertRaisesRegex(ConfigError, "must have exactly one year"):
@@ -450,13 +450,36 @@ class BalancingAreaDemandStepTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.data_dir = Path(tmp.name) / "coders"
         self.dest = Path(tmp.name) / "balancing_area_demand.csv"
+        self.hourly_2024 = Path(tmp.name) / "balancing_area_demand_hourly_2024.csv"
         write_demand_files(self.data_dir, [2022, 2024])
 
-    def _step(self) -> str:
+    def _step(self, demand_years: tuple[int, ...] = (2024,)) -> str:
         stdout = StringIO()
         with redirect_stdout(stdout):
-            _write_balancing_area_demand(self.data_dir)
+            _write_balancing_area_demand(self.data_dir, demand_years)
         return stdout.getvalue()
+
+    def test_hourly_file_written_only_for_configured_years(self):
+        self.assertIn("writing balancing_area_demand_hourly_2024.csv", self._step())
+        self.assertFalse((self.data_dir.parent / "balancing_area_demand_hourly_2022.csv").exists())
+        all_bas = {ba for populations in PROVINCE_BA_POPULATION.values() for ba in populations}
+        self.assertEqual(len(read_rows(self.hourly_2024)), len(all_bas) * HOURS_PER_YEAR)
+
+    def test_hourly_file_rebuilt_only_when_older_than_that_years_inputs(self):
+        self._step()
+        self.hourly_2024.write_text("sentinel\n")
+        newest_2024 = max(p.stat().st_mtime for p in self.data_dir.glob("*_2024.csv"))
+        os.utime(self.hourly_2024, (newest_2024 + 10, newest_2024 + 10))
+        os.utime(self.data_dir / "provincial_demand_ON_2022.csv", (2e9, 2e9))
+        self.assertNotIn("hourly", self._step())
+        self.assertEqual(self.hourly_2024.read_text(), "sentinel\n")
+
+        os.utime(self.hourly_2024, (newest_2024 - 10, newest_2024 - 10))
+        self.assertIn("writing balancing_area_demand_hourly_2024.csv", self._step())
+
+    def test_configured_year_without_demand_files_fails(self):
+        with self.assertRaisesRegex(DataError, "demand year 2023"):
+            self._step((2023,))
 
     def test_uses_every_cached_year_and_is_not_rebuilt_while_up_to_date(self):
         self.assertIn("writing balancing_area_demand.csv", self._step())

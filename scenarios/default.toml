@@ -29,5 +29,7 @@ bess_initial_soc = 0.0
 # Battery round-trip efficiency.Applied entirely on charge:
 # energy stored = energy drawn * efficiency. Discharge is lossless.
 bess_rte = 0.88
-# Total battery storage capacity, as a fraction of most recent annual demand
+# Total battery storage capacity, as a fraction of average daily demand in most recent year
 bess_capacity_ratio = 0.2
+# Duration of bess storage in hours. Derive maximum power as capacity / duration.
+bess_duration = 4

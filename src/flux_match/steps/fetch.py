@@ -18,12 +18,16 @@ Then it derives data/balancing_area_demand.csv: total annual demand per balancin
 demand year (see balancing_area_demand.py). Unlike the downloads, it uses every provincial
 demand file in data/coders/, not only the configured demand_years, and every year found must
 have all provinces. It is rebuilt when missing or older than any of those files.
+
+Finally, for each configured demand year it derives data/balancing_area_demand_hourly_<year>.csv,
+the hourly demand per balancing area that the dispatch step uses. Each is rebuilt when missing or
+older than any of that year's provincial demand files.
 """
 
 import csv
 import json
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
@@ -36,6 +40,7 @@ from flux_match.balancing_area_demand import (
     demand_file_paths,
     find_demand_files,
     write_balancing_area_demand,
+    write_hourly_ba_demand,
 )
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, report_data_error
@@ -166,7 +171,7 @@ def run(
             print(f"downloading {dest.name}", flush=True)
             _fetch_one(item, dest, api_key, get)
     _write_rankings(params, data_dir)
-    _write_balancing_area_demand(data_dir)
+    _write_balancing_area_demand(data_dir, params.demand_years)
 
 
 def _write_rankings(params: FetchParams, data_dir: Path) -> None:
@@ -177,22 +182,32 @@ def _write_rankings(params: FetchParams, data_dir: Path) -> None:
         *(csv_path(data_dir, table, year=year) for table in CAPACITY_FACTOR_TABLES),
     ]
     dest = data_dir.parent / paths.RANKINGS_FILENAME
-    if _already_present(dest) and dest.stat().st_mtime >= max(p.stat().st_mtime for p in inputs):
+    if _up_to_date(dest, inputs):
         return
     print(f"writing {dest.name}", flush=True)
     grid_cell_info, solar, wind = inputs
     write_grid_cell_rankings(grid_cell_info, solar, wind, dest)
 
 
-def _write_balancing_area_demand(data_dir: Path) -> None:
-    """Derive balancing_area_demand.csv if missing or older than any provincial demand file."""
+def _write_balancing_area_demand(data_dir: Path, demand_years: Sequence[int]) -> None:
+    """Derive balancing_area_demand.csv from every provincial demand file, and the hourly file
+    for each of `demand_years`, each only if missing or older than its inputs."""
     files = find_demand_files(data_dir)
     dest = data_dir.parent / paths.BA_DEMAND_FILENAME
-    newest = max(p.stat().st_mtime for p in demand_file_paths(files))
-    if _already_present(dest) and dest.stat().st_mtime >= newest:
-        return
-    print(f"writing {dest.name}", flush=True)
-    write_balancing_area_demand(files, dest)
+    if not _up_to_date(dest, demand_file_paths(files)):
+        print(f"writing {dest.name}", flush=True)
+        write_balancing_area_demand(files, dest)
+    for year in demand_years:
+        if year not in files:
+            raise DataError(f"No provincial demand files for demand year {year} in {data_dir}")
+        dest = data_dir.parent / paths.ba_demand_hourly_filename(year)
+        if not _up_to_date(dest, list(files[year].values())):
+            print(f"writing {dest.name}", flush=True)
+            write_hourly_ba_demand(files[year], dest)
+
+
+def _up_to_date(dest: Path, inputs: Sequence[Path]) -> bool:
+    return _already_present(dest) and dest.stat().st_mtime >= max(p.stat().st_mtime for p in inputs)
 
 
 def _already_present(path: Path) -> bool:

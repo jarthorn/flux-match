@@ -12,6 +12,10 @@ file for every province in PROVINCE_BA_POPULATION, otherwise the totals would be
 missing file or malformed value is a hard failure and no output file is written. Negative hourly
 demand is valid, since imports are not modeled and can show up as negative demand upstream. It
 is summed like any other value.
+
+Also builds `balancing_area_demand_hourly_<year>.csv` for one year: one row per balancing area per
+hour, with each province's hourly demand split by the same population shares. Rows are sorted by
+balancing area, then hour, to match vre_by_ba_hourly.csv so the dispatch step can stream both.
 """
 
 import math
@@ -21,7 +25,7 @@ from pathlib import Path
 
 from flux_match.errors import DataError
 from flux_match.io import read_csv, write_csv_atomic
-from flux_match.schema import HOURS_PER_YEAR
+from flux_match.schema import BA_DEMAND_HOURLY_COLUMNS, HOURS_PER_YEAR
 
 BA_COLUMN = "balancing_area"
 
@@ -99,6 +103,11 @@ def find_demand_files(data_dir: Path) -> DemandFiles:
 
 def read_annual_demand(path: Path, province_code: str) -> float:
     """Total demand in MWh over the 8760 hours of one provincial demand file."""
+    return math.fsum(read_hourly_demand(path, province_code))
+
+
+def read_hourly_demand(path: Path, province_code: str) -> list[float]:
+    """The 8760 hourly demand values (MWh, equivalently average MW) of one provincial file."""
     name = path.name
     rows = read_csv(path, DEMAND_FILE_COLUMNS)
     if len(rows) != HOURS_PER_YEAR:
@@ -121,7 +130,7 @@ def read_annual_demand(path: Path, province_code: str) -> float:
         if not math.isfinite(value):
             raise DataError(f"{name}: hour {hour}: invalid demand_MWh {text!r}")
         values.append(value)
-    return math.fsum(values)
+    return values
 
 
 def split_by_population(total: float, populations: Mapping[str, int]) -> dict[str, float]:
@@ -162,6 +171,44 @@ def write_balancing_area_demand(files: DemandFiles, dest: Path) -> None:
     }
     years, rows = build_ba_demand(totals)
     write_csv_atomic(dest, (BA_COLUMN, *map(str, years)), rows)
+
+
+def build_hourly_ba_demand(
+    provincial_hourly: Mapping[str, Sequence[float]],
+) -> dict[str, list[float]]:
+    """Hourly MW per balancing area, from province code -> hourly MWh for one year."""
+    missing = [code for code in PROVINCE_NAMES if code not in provincial_hourly]
+    if missing:
+        raise DataError(f"Hourly demand is missing provinces {missing}")
+    hours = {len(values) for values in provincial_hourly.values()}
+    if len(hours) != 1:
+        raise DataError(f"Provincial hourly demand has differing hour counts: {sorted(hours)}")
+    (hour_count,) = hours
+    totals: dict[str, list[float]] = {
+        ba: [0.0] * hour_count
+        for populations in PROVINCE_BA_POPULATION.values()
+        for ba in populations
+    }
+    for code, name in PROVINCE_NAMES.items():
+        populations = PROVINCE_BA_POPULATION[name]
+        for hour, mwh in enumerate(provincial_hourly[code]):
+            for ba, share in split_by_population(mwh, populations).items():
+                totals[ba][hour] += share
+    return totals
+
+
+def write_hourly_ba_demand(by_province: Mapping[str, Path], dest: Path) -> None:
+    """Build `dest` from one year's provincial demand files, sorted by balancing area and hour.
+    Leaves no partial file on failure."""
+    hourly = build_hourly_ba_demand(
+        {code: read_hourly_demand(path, code) for code, path in by_province.items()}
+    )
+    rows = (
+        {BA_COLUMN: ba, "hour": hour, "demand_mw": mw}
+        for ba, values in sorted(hourly.items())
+        for hour, mw in enumerate(values, start=1)
+    )
+    write_csv_atomic(dest, BA_DEMAND_HOURLY_COLUMNS, rows)
 
 
 def read_ba_demand(path: Path) -> tuple[int, dict[str, float]]:
