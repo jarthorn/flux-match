@@ -11,11 +11,13 @@ from flux_match.balancing_area_demand import (
     PROVINCE_BA_POPULATION,
     PROVINCE_NAMES,
     build_ba_demand,
+    build_hourly_ba_demand,
     find_demand_files,
     read_annual_demand,
     read_ba_demand,
     split_by_population,
     write_balancing_area_demand,
+    write_hourly_ba_demand,
 )
 from flux_match.errors import DataError
 from flux_match.schema import HOURS_PER_YEAR
@@ -212,6 +214,52 @@ class WriteTest(TempDirTest):
         with self.assertRaises(DataError):
             write_balancing_area_demand(find_demand_files(self.data_dir), dest)
         self.assertEqual([p.name for p in self.dir.glob("*.csv*")], [])
+
+
+class HourlyBaDemandTest(TempDirTest):
+    def test_each_hour_split_by_population_and_spanning_ba_sums_both_provinces(self):
+        hourly = {code: [0.0, 0.0] for code in PROVINCE_NAMES}
+        hourly["ON"] = [100.0, 200.0]
+        hourly["QC"] = [1000.0, -50.0]
+        on, qc = PROVINCE_BA_POPULATION["Ontario"], PROVINCE_BA_POPULATION["Quebec"]
+        on_share = on["Ontario.a"] / sum(on.values())
+        qc_share = qc["Ontario.a"] / sum(qc.values())
+        got = build_hourly_ba_demand(hourly)
+        self.assertAlmostEqual(got["Ontario.a"][0], 100 * on_share + 1000 * qc_share)
+        self.assertAlmostEqual(got["Ontario.a"][1], 200 * on_share - 50 * qc_share)
+        self.assertAlmostEqual(math.fsum(mw[1] for mw in got.values()), 150.0)
+
+    def test_missing_province_fails(self):
+        hourly = {code: [1.0] for code in PROVINCE_NAMES if code != "SK"}
+        with self.assertRaisesRegex(DataError, r"missing provinces \['SK'\]"):
+            build_hourly_ba_demand(hourly)
+
+    def test_differing_hour_counts_fail(self):
+        hourly = {code: [1.0] for code in PROVINCE_NAMES}
+        hourly["AB"] = [1.0, 2.0]
+        with self.assertRaisesRegex(DataError, "differing hour counts"):
+            build_hourly_ba_demand(hourly)
+
+    def test_written_sorted_by_balancing_area_then_hour_and_matches_annual_totals(self):
+        write_demand_files(self.data_dir, [2024], {"PE": 2.0})
+        files = find_demand_files(self.data_dir)[2024]
+        dest = self.dir / "balancing_area_demand_hourly_2024.csv"
+        write_hourly_ba_demand(files, dest)
+        with dest.open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        self.assertEqual(list(rows[0]), ["balancing_area", "hour", "demand_mw"])
+        keys = [(r[BA_COLUMN], int(r["hour"])) for r in rows]
+        self.assertEqual(keys, sorted(keys))
+        pe = [float(r["demand_mw"]) for r in rows if r[BA_COLUMN] == "Prince Edward Island.a"]
+        self.assertEqual(pe, [2.0] * HOURS_PER_YEAR)
+        _, annual = build_ba_demand(
+            {2024: {code: read_annual_demand(path, code) for code, path in files.items()}}
+        )
+        for row in annual:
+            hourly_total = math.fsum(
+                float(r["demand_mw"]) for r in rows if r[BA_COLUMN] == row[BA_COLUMN]
+            )
+            self.assertAlmostEqual(hourly_total, row["2024"])
 
 
 class ReadBaDemandTest(TempDirTest):

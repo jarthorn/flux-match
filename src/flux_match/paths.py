@@ -20,6 +20,10 @@ RANKINGS_FILENAME = "grid_cell_rankings.csv"
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
 
 
+def ba_demand_hourly_filename(year: int) -> str:
+    return f"balancing_area_demand_hourly_{year}.csv"
+
+
 def scenario_path(name_or_path: str) -> Path:
     """Resolve a scenario name (`greedy`) or an explicit path (`my/file.toml`)."""
     path = Path(name_or_path)

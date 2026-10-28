@@ -12,6 +12,13 @@ DISPATCH_COLUMNS = (
     "net_demand_mw",
 )
 
+# Hourly demand per balancing area for one year, written by the fetch step.
+BA_DEMAND_HOURLY_COLUMNS = (
+    "balancing_area",
+    "hour",
+    "demand_mw",
+)
+
 # Hourly wind and solar generation per balancing area, written by the preprocess step.
 VRE_HOURLY_COLUMNS = (
     "balancing_area",
