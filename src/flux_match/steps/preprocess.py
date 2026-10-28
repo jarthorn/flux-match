@@ -6,8 +6,10 @@ area. Onshore and offshore wind both use the wind capacity-factor table; solar u
 solar table. The year is fetch.capacity_factor_years (exactly one).
 
 Writes vre_by_ba_hourly.csv: one row per balancing area per hour (1-8760), with wind_mw,
-solar_mw, and variable_generation_mw (their sum). Every balancing area in grid_cell_info
-is included; areas with no selected sites are zero. Capacity-factor files are streamed.
+solar_mw, and variable_generation_mw (their sum). Values are rounded to whole MW, the precision
+of the CODERS demand data; the sum is of the rounded values, so each row adds up exactly. Every
+balancing area in grid_cell_info is included; areas with no selected sites are zero.
+Capacity-factor files are streamed.
 
 A selected grid cell missing from grid_cell_info or from the relevant capacity-factor
 table is a hard failure. Capacity factors must be in [0, 1], with 8760 sequential hours.
@@ -145,8 +147,8 @@ def _rows(
         wind_hours = wind.get(ba, zeros)
         solar_hours = solar.get(ba, zeros)
         for hour in range(hours_in_year):
-            wind_mw = wind_hours[hour]
-            solar_mw = solar_hours[hour]
+            wind_mw = round(wind_hours[hour])
+            solar_mw = round(solar_hours[hour])
             yield {
                 "balancing_area": ba,
                 "hour": hour + 1,

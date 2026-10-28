@@ -19,6 +19,8 @@ lossless. Surplus that cannot be stored shows up as negative net demand.
 
 Writes dispatch_hourly_<year>.csv with DISPATCH_COLUMNS, where battery output is positive for
 discharge and negative for charge, and net demand = demand - variable generation - battery output.
+Output values are rounded to whole MW, the precision of the CODERS demand data. The battery is
+simulated at full precision, so the rounded columns of a row may not add up exactly.
 """
 
 import itertools
@@ -122,8 +124,7 @@ def dispatch_hour(
         output = min(shortfall_mw, battery.power_mw, soc_mwh)
         return output, soc_mwh - output
     drawn = min(-shortfall_mw, battery.power_mw, (battery.capacity_mwh - soc_mwh) / rte)
-    # 0.0 - x rather than -x, so an idle battery writes 0.0 rather than -0.0.
-    return 0.0 - drawn, min(battery.capacity_mwh, soc_mwh + drawn * rte)
+    return -drawn, min(battery.capacity_mwh, soc_mwh + drawn * rte)
 
 
 def dispatch_rows(
@@ -145,9 +146,9 @@ def dispatch_rows(
                 "balancing_area": ba,
                 "year": year,
                 "hour": h.hour,
-                "variable_generation_mw": h.variable_generation_mw,
-                "battery_output_mw": output,
-                "net_demand_mw": shortfall - output,
+                "variable_generation_mw": round(h.variable_generation_mw),
+                "battery_output_mw": round(output),
+                "net_demand_mw": round(shortfall - output),
             }
 
 

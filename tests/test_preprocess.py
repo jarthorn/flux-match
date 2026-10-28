@@ -150,15 +150,17 @@ class WriteVreHourlyTest(TempDirTest):
         self.assertEqual(len(rows), 6)
         self.assertTrue(all(float(r["variable_generation_mw"]) == 0.0 for r in rows))
 
-    def test_fractional_capacity_is_not_rounded(self) -> None:
+    def test_output_rounded_to_whole_mw_and_total_is_sum_of_rounded_values(self) -> None:
         rows = self._write(
             *self._inputs(
-                [Site(1, WIND_ONS, 566.9952054794521)],
+                [Site(1, WIND_ONS, 566.9952054794521), Site(1, SOLAR, 10.0)],
                 {"1": [1.0, 0.0, 0.0], "3": [0.0, 0.0, 0.0]},
-                {"1": [0.0, 0.0, 0.0]},
+                {"1": [0.04, 0.0, 0.0]},
             )
         )
-        self.assertAlmostEqual(float(rows[0]["wind_mw"]), 566.9952054794521)
+        self.assertEqual(rows[0]["wind_mw"], "567")
+        self.assertEqual(rows[0]["solar_mw"], "0")
+        self.assertEqual(rows[0]["variable_generation_mw"], "567")
 
     def test_selected_cell_missing_from_grid_info_fails_without_output(self) -> None:
         args = self._inputs(
