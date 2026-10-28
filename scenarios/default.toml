@@ -14,7 +14,7 @@ strategy = "greedy"
 # Total solar capacity per balancing area, as a fraction of annual demand
 solar_capacity_ratio  = 1.0
 # Total wind capacity per balancing area, as a fraction of annual demand
-wind_capacity_ratio  = 1.0
+wind_capacity_ratio  = 2.0
 
 max_wind_capacity_mw_per_cell = 1000
 max_solar_capacity_mw_per_cell = 500
@@ -30,6 +30,6 @@ bess_initial_soc = 0.0
 # energy stored = energy drawn * efficiency. Discharge is lossless.
 bess_rte = 0.88
 # Total battery storage capacity, as a fraction of average daily demand in most recent year
-bess_capacity_ratio = 0.2
+bess_capacity_ratio = 0.1
 # Duration of bess storage in hours. Derive maximum power as capacity / duration.
 bess_duration = 4

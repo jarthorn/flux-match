@@ -4,7 +4,13 @@ from datetime import datetime
 from pathlib import Path
 
 from flux_match.errors import ConfigError, RunStateError
-from flux_match.run_context import CONFIG_NAME, create_run, open_run
+from flux_match.run_context import (
+    CONFIG_NAME,
+    create_run,
+    latest_run_dir,
+    open_run,
+    run_dir_timestamp,
+)
 
 STARTED = datetime(2026, 10, 27, 9, 5)
 
@@ -55,6 +61,25 @@ class RunContextTest(unittest.TestCase):
     def test_open_run_rejects_non_run_folder(self):
         with self.assertRaises(RunStateError):
             open_run(self.root)
+
+    def test_latest_run_dir_picks_the_newest_timestamped_folder(self):
+        older = create_run(self.scenario, self.output, STARTED)
+        newer = create_run(self.scenario, self.output, datetime(2026, 10, 27, 21, 47))
+        (self.output / "not-a-run").mkdir()
+        self.assertEqual(latest_run_dir(self.output), newer.run_dir)
+        self.assertNotEqual(latest_run_dir(self.output), older.run_dir)
+
+    def test_latest_run_dir_fails_when_output_is_missing_or_empty(self):
+        with self.assertRaisesRegex(RunStateError, "Output folder not found"):
+            latest_run_dir(self.root / "missing")
+        self.output.mkdir()
+        with self.assertRaisesRegex(RunStateError, "No run folders found"):
+            latest_run_dir(self.output)
+
+    def test_run_dir_timestamp_is_the_yyyyMMdd_hhmm_prefix(self):
+        ctx = create_run(self.scenario, self.output, STARTED)
+        self.assertEqual(run_dir_timestamp(ctx.run_dir), "20261027-0905")
+        self.assertEqual(run_dir_timestamp(self.root / "scratch"), "scratch")
 
 
 if __name__ == "__main__":
