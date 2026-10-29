@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from flux_match import paths
@@ -30,9 +32,43 @@ class AllocateTest(unittest.TestCase):
     def test_zero_target_selects_nothing(self) -> None:
         self.assertEqual(allocate([1, 2], 0.0, 1.0, SOLAR, "East.a"), [])
 
-    def test_fails_when_cells_cannot_meet_target(self) -> None:
+    def test_raises_per_cell_cap_when_too_low(self) -> None:
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            sites = allocate([1, 2], 5.0, 2.0, WIND_ONS, "East.a")
+        self.assertEqual(
+            sites,
+            [Site(1, WIND_ONS, 2.5), Site(2, WIND_ONS, 2.5)],
+        )
+        self.assertIn(
+            "The value of max_wind_capacity_mw_per_cell is too low to meet requested capacity. "
+            "Raising the maximum to 2.5 so that capacity can be supplied",
+            stdout.getvalue(),
+        )
+
+    def test_raises_solar_cap_when_too_low(self) -> None:
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            sites = allocate([7], 10.0, 3.0, SOLAR, "West.a")
+        self.assertEqual(sites, [Site(7, SOLAR, 10.0)])
+        self.assertIn("max_solar_capacity_mw_per_cell", stdout.getvalue())
+        self.assertIn("Raising the maximum to 10", stdout.getvalue())
+
+    def test_fails_when_there_are_no_cells(self) -> None:
         with self.assertRaisesRegex(DataError, r"East\.a.*wind_ons"):
-            allocate([1, 2], 5.0, 2.0, WIND_ONS, "East.a")
+            allocate([], 5.0, 2.0, WIND_ONS, "East.a")
+
+    def test_raised_cap_covers_target_despite_float_rounding(self) -> None:
+        # 22701 / 489 is a float that looks exact as n * (target/n) but leaves a
+        # leftover when capacity is subtracted cell by cell.
+        n = 489
+        target = 22701.0
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            sites = allocate(list(range(n)), target, 10.0, WIND_ONS, "British Columbia.a")
+        self.assertEqual(len(sites), n)
+        self.assertAlmostEqual(sum(s.capacity_mw for s in sites), target, places=9)
+        self.assertIn("Raising the maximum to", stdout.getvalue())
 
 
 def selection_config(**overrides: object) -> Config:
@@ -162,9 +198,24 @@ class SelectSitesTest(unittest.TestCase):
         self.assertTrue(all(s.generation_type is SOLAR for s in sites))
         self.assertEqual(len(sites), 3)
 
-    def test_fails_when_a_ba_has_too_few_cells(self) -> None:
-        with self.assertRaisesRegex(DataError, r"East\.a"):
-            self.select(max_wind_mw=1.0)
+    def test_raises_cap_when_a_ba_has_too_few_cells(self) -> None:
+        # East average load 3 MW, two cells, max_wind 1 MW: raise wind cap to 1.5.
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            sites = self.select(max_wind_mw=1.0)
+        self.assertEqual(
+            sorted(sites),
+            [
+                Site(10, SOLAR, 2.0),
+                Site(10, WIND_ONS, 1.5),
+                Site(20, SOLAR, 1.0),
+                Site(20, WIND_ONS, 1.5),
+                Site(30, SOLAR, 1.0),
+                Site(30, WIND_ONS, 1.0),
+            ],
+        )
+        self.assertIn("max_wind_capacity_mw_per_cell", stdout.getvalue())
+        self.assertIn("Raising the maximum to 1.5", stdout.getvalue())
 
     def test_never_selects_offshore_wind(self) -> None:
         self.assertTrue(all(s.generation_type is not WIND_OFS for s in self.select()))

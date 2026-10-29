@@ -7,7 +7,10 @@ average load in the newest year of balancing_area_demand.csv:
 
 Which ranking is "best" is `ranking_metric` in [selection.greedy]: annual capacity factor
 or median daily capacity. Cells are filled in that rank order (1 = highest), each up to
-the per-cell cap, until the target is met. Wind is always onshore (wind_ons).
+the per-cell cap, until the target is met. If the cap is too low for the cells available,
+it is raised to at least target / cell count, rounded up so the target can still be
+placed. Wind is always
+onshore (wind_ons).
 """
 
 import math
@@ -74,13 +77,32 @@ def allocate(
     generation_type: GenerationType,
     balancing_area: str,
 ) -> list[Site]:
-    """Fill `cells` (best first) up to `max_mw` each until `target_mw` is placed."""
+    """Fill `cells` (best first) up to `max_mw` each until `target_mw` is placed.
+
+    If `max_mw` is too low to place `target_mw` across the available cells, raise it
+    to a per-cell floor of `target_mw / len(cells)`, rounded up so that filling every
+    cell at that cap covers the target in float64 arithmetic.
+    """
     if target_mw < 0:
         raise DataError(
             f"{balancing_area}: target {generation_type} capacity is negative: {target_mw}"
         )
     if target_mw == 0:
         return []
+    if not cells:
+        raise DataError(
+            f"{balancing_area}: not enough grid cells to place {target_mw:g} MW of "
+            f"{generation_type}; {target_mw:g} MW unallocated (0 cells)"
+        )
+    min_mw = _min_mw_per_cell(target_mw, len(cells))
+    if max_mw < min_mw:
+        param = _max_capacity_param(generation_type)
+        print(
+            f"The value of {param} is too low to meet requested capacity in {balancing_area}. "
+            f"Raising the maximum to {min_mw:g} so that capacity can be supplied",
+            flush=True,
+        )
+        max_mw = min_mw
     remaining = target_mw
     sites: list[Site] = []
     for cell in cells:
@@ -197,6 +219,28 @@ def _check_ranks(ba: str, kind: str, ranks: Sequence[int], source: str) -> None:
     if set(ranks) == expected:
         return
     raise DataError(f"{source}: {ba} {kind} ranks must be 1..{len(ranks)}, got {sorted(ranks)}")
+
+
+def _min_mw_per_cell(target_mw: float, n_cells: int) -> float:
+    """Smallest per-cell cap that covers `target_mw` when subtracted cell by cell.
+
+    `target_mw / n_cells` can still leave a tiny remainder because float64 division
+    and repeated subtraction are not inverses, so round up until the leftover is 0.
+    """
+    max_mw = target_mw / n_cells
+    while True:
+        remaining = target_mw
+        for _ in range(n_cells):
+            remaining -= max_mw
+            if remaining <= 0:
+                return max_mw
+        max_mw = math.nextafter(max_mw, math.inf)
+
+
+def _max_capacity_param(generation_type: GenerationType) -> str:
+    if generation_type is GenerationType.SOLAR:
+        return "max_solar_capacity_mw_per_cell"
+    return "max_wind_capacity_mw_per_cell"
 
 
 def _ranking_metric(params: Config) -> str:
