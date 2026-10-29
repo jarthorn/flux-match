@@ -37,6 +37,7 @@ wind_capacity_ratio = 1.0
 max_wind_capacity_mw_per_cell = 1000
 max_solar_capacity_mw_per_cell = 500
 [selection.greedy]
+ranking_metric = "median_daily_capacity"
 [dispatch]
 dispatch_years = [2024]
 bess_initial_soc = 0.0

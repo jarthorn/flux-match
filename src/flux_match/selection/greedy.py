@@ -1,12 +1,13 @@
-"""Greedy strategy: pick the sites with the highest annual output, capped per grid cell.
+"""Greedy strategy: pick the best-ranked sites, capped per grid cell.
 
 For each balancing area, nameplate wind and solar capacity are a fraction of that area's
 average load in the newest year of balancing_area_demand.csv:
 
     target_mw = annual_demand_mwh * ratio / HOURS_PER_YEAR
 
-Cells are filled in rank order (1 = highest annual capacity factor), each up to the per-cell
-cap, until the target is met. Wind is always onshore (wind_ons).
+Which ranking is "best" is `ranking_metric` in [selection.greedy]: annual capacity factor
+or median daily capacity. Cells are filled in that rank order (1 = highest), each up to
+the per-cell cap, until the target is met. Wind is always onshore (wind_ons).
 """
 
 import math
@@ -26,6 +27,12 @@ from flux_match.selection.base import GenerationType, Site, Strategy
 
 GRID_CELL_INFO = "grid_cell_info.csv"
 
+# ranking_metric -> (wind rank column, solar rank column) in grid_cell_rankings.csv.
+RANKING_METRICS = {
+    "annual_capacity": ("ba_annual_wind_rank", "ba_annual_solar_rank"),
+    "median_daily_capacity": ("ba_median_wind_rank", "ba_median_solar_rank"),
+}
+
 
 @dataclass(frozen=True)
 class RankedCell:
@@ -40,6 +47,7 @@ class GreedyStrategy(Strategy):
         self.wind_capacity_ratio = _non_negative(params, "wind_capacity_ratio")
         self.max_wind_capacity_mw_per_cell = _positive(params, "max_wind_capacity_mw_per_cell")
         self.max_solar_capacity_mw_per_cell = _positive(params, "max_solar_capacity_mw_per_cell")
+        self.ranking_metric = _ranking_metric(params.section("greedy"))
 
     def select(self, ctx: RunContext) -> list[Site]:
         return select_sites(
@@ -50,6 +58,7 @@ class GreedyStrategy(Strategy):
             solar_capacity_ratio=self.solar_capacity_ratio,
             max_wind_mw=self.max_wind_capacity_mw_per_cell,
             max_solar_mw=self.max_solar_capacity_mw_per_cell,
+            ranking_metric=self.ranking_metric,
         )
 
 
@@ -98,9 +107,10 @@ def select_sites(
     solar_capacity_ratio: float,
     max_wind_mw: float,
     max_solar_mw: float,
+    ranking_metric: str,
 ) -> list[Site]:
     _, demand = read_ba_demand(demand_path)
-    cells_by_ba = read_cells_by_ba(grid_cell_info, rankings_path)
+    cells_by_ba = read_cells_by_ba(grid_cell_info, rankings_path, ranking_metric)
     unknown = sorted(set(cells_by_ba) - set(demand))
     if unknown:
         raise DataError(f"grid cells in balancing areas with no demand data: {unknown}")
@@ -133,8 +143,11 @@ def select_sites(
     return sites
 
 
-def read_cells_by_ba(grid_cell_info: Path, rankings_path: Path) -> dict[str, list[RankedCell]]:
+def read_cells_by_ba(
+    grid_cell_info: Path, rankings_path: Path, ranking_metric: str
+) -> dict[str, list[RankedCell]]:
     """Join rankings to balancing areas. Rankings must cover exactly the info-file cells."""
+    wind_field, solar_field = RANKING_METRICS[ranking_metric]
     cells, areas = read_grid_cells(grid_cell_info)
     cell_to_ba = dict(zip(cells, areas, strict=True))
     ranking_rows = read_csv(rankings_path, RANKINGS_COLUMNS)
@@ -158,8 +171,8 @@ def read_cells_by_ba(grid_cell_info: Path, rankings_path: Path) -> dict[str, lis
             ) from None
         ranked = RankedCell(
             grid_cell=grid_cell,
-            wind_rank=_parse_rank(row["ba_annual_wind_rank"], "ba_annual_wind_rank", cell_id),
-            solar_rank=_parse_rank(row["ba_annual_solar_rank"], "ba_annual_solar_rank", cell_id),
+            wind_rank=_parse_rank(row[wind_field], wind_field, cell_id),
+            solar_rank=_parse_rank(row[solar_field], solar_field, cell_id),
         )
         cells_by_ba.setdefault(cell_to_ba[cell_id], []).append(ranked)
 
@@ -184,6 +197,16 @@ def _check_ranks(ba: str, kind: str, ranks: Sequence[int], source: str) -> None:
     if set(ranks) == expected:
         return
     raise DataError(f"{source}: {ba} {kind} ranks must be 1..{len(ranks)}, got {sorted(ranks)}")
+
+
+def _ranking_metric(params: Config) -> str:
+    value = params.get("ranking_metric", str)
+    if value not in RANKING_METRICS:
+        allowed = ", ".join(repr(m) for m in RANKING_METRICS)
+        raise ConfigError(
+            f"{params.source}: 'ranking_metric' must be one of [{allowed}], got {value!r}"
+        )
+    return value
 
 
 def _non_negative(params: Config, key: str) -> float:
