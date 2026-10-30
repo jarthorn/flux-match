@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "A simple hourly energy dispatch model for Canadian balancing areas."
 readme = "README.md"
 requires-python = ">=3.15"
-dependencies = []
+dependencies = [
+    "scikit-learn>=1.9.1",
+]
 
 [project.scripts]
 flux-match = "flux_match.cli:main"

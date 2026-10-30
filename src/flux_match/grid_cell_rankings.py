@@ -16,6 +16,7 @@ failure and no output file is written.
 """
 
 import csv
+import math
 import statistics
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -250,6 +251,119 @@ def read_grid_cells(path: Path) -> tuple[list[str], list[str]]:
         blank = [cells[i] for i, a in enumerate(areas) if not a]
         raise DataError(f"{path.name}: blank balancing_area for grid cells {_abbreviate(blank)}")
     return cells, areas
+
+
+@dataclass(frozen=True)
+class RankedCell:
+    """One grid cell joined from grid_cell_info.csv and grid_cell_rankings.csv."""
+
+    grid_cell: int
+    latitude: float
+    longitude: float
+    annual_wind_capacity_factor: float
+    annual_solar_capacity_factor: float
+    wind_rank: int
+    solar_rank: int
+
+
+def read_cells_by_ba(
+    grid_cell_info: Path, rankings_path: Path, wind_rank_field: str, solar_rank_field: str
+) -> dict[str, list[RankedCell]]:
+    """Join rankings to balancing areas and locations, using the given rank columns.
+
+    Rankings must cover exactly the info-file cells, and ranks within each balancing area
+    must be exactly 1..n.
+    """
+    cells, areas = read_grid_cells(grid_cell_info)
+    cell_to_ba = dict(zip(cells, areas, strict=True))
+    locations = _read_locations(grid_cell_info)
+    ranking_rows = read_csv(rankings_path, RANKINGS_COLUMNS)
+    ranking_cells = [row["grid_cell"].strip() for row in ranking_rows]
+    if set(ranking_cells) != set(cells):
+        missing = sorted(set(cells) - set(ranking_cells))
+        extra = sorted(set(ranking_cells) - set(cells))
+        raise DataError(
+            f"{rankings_path.name} grid cells differ from {grid_cell_info.name}: "
+            f"missing {missing}, extra {extra}"
+        )
+
+    cells_by_ba: dict[str, list[RankedCell]] = {}
+    for row in ranking_rows:
+        cell_id = row["grid_cell"].strip()
+        try:
+            grid_cell = int(cell_id)
+        except ValueError:
+            raise DataError(
+                f"{rankings_path.name}: grid_cell {cell_id!r} is not an integer"
+            ) from None
+        latitude, longitude = locations[cell_id]
+        ranked = RankedCell(
+            grid_cell=grid_cell,
+            latitude=latitude,
+            longitude=longitude,
+            annual_wind_capacity_factor=_parse_annual(row, "annual_wind_capacity_factor", cell_id),
+            annual_solar_capacity_factor=_parse_annual(
+                row, "annual_solar_capacity_factor", cell_id
+            ),
+            wind_rank=_parse_rank(row[wind_rank_field], wind_rank_field, cell_id),
+            solar_rank=_parse_rank(row[solar_rank_field], solar_rank_field, cell_id),
+        )
+        cells_by_ba.setdefault(cell_to_ba[cell_id], []).append(ranked)
+
+    for ba, ranked_cells in cells_by_ba.items():
+        _check_ranks(ba, "wind", [c.wind_rank for c in ranked_cells], rankings_path.name)
+        _check_ranks(ba, "solar", [c.solar_rank for c in ranked_cells], rankings_path.name)
+    return cells_by_ba
+
+
+def _read_locations(path: Path) -> dict[str, tuple[float, float]]:
+    """(latitude, longitude) of each grid cell in grid_cell_info.csv."""
+    locations = {}
+    for row in read_csv(path, ("grid_cell", "latitude", "longitude")):
+        cell_id = row["grid_cell"].strip()
+        try:
+            latitude = float(row["latitude"])
+            longitude = float(row["longitude"])
+        except ValueError:
+            raise DataError(
+                f"{path.name}: grid cell {cell_id}: latitude or longitude is not a number: "
+                f"{row['latitude']!r}, {row['longitude']!r}"
+            ) from None
+        if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):  # rejects NaN
+            raise DataError(
+                f"{path.name}: grid cell {cell_id}: location out of range: "
+                f"latitude {latitude}, longitude {longitude}"
+            )
+        locations[cell_id] = (latitude, longitude)
+    return locations
+
+
+def _parse_annual(row: dict[str, str], field: str, cell_id: str) -> float:
+    text = row[field]
+    try:
+        value = float(text)
+    except ValueError:
+        raise DataError(f"grid cell {cell_id}: {field} is not a number: {text!r}") from None
+    if not math.isfinite(value) or value < 0:
+        raise DataError(f"grid cell {cell_id}: {field} must be finite and >= 0, got {text!r}")
+    return value
+
+
+def _parse_rank(text: str, field: str, cell_id: str) -> int:
+    try:
+        rank = int(text)
+    except ValueError:
+        raise DataError(f"grid cell {cell_id}: {field} is not an integer: {text!r}") from None
+    if rank < 1:
+        raise DataError(f"grid cell {cell_id}: {field} must be >= 1, got {rank}")
+    return rank
+
+
+def _check_ranks(ba: str, kind: str, ranks: Sequence[int], source: str) -> None:
+    expected = set(range(1, len(ranks) + 1))
+    if set(ranks) == expected:
+        return
+    raise DataError(f"{source}: {ba} {kind} ranks must be 1..{len(ranks)}, got {sorted(ranks)}")
 
 
 def write_grid_cell_rankings(
