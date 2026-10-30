@@ -1,0 +1,43 @@
+# Balanced wind and solar, with sites spread across geographic clusters in each balancing
+# area. Every parameter a run uses must be set here; there are no defaults in code. A copy is
+# saved as config.toml in each run folder.
+
+[fetch]
+# Two-letter province codes as used by the CODERS API.
+provinces = ["AB", "BC", "MB", "NB", "NL", "NS", "ON", "PE", "QC", "SK"]
+# Calendar years of provincial_demand to download.
+demand_years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+# Wind/solar capacity-factor tables are published per year; CODERS currently has 2021.
+capacity_factor_years = [2021]
+
+[selection]
+strategy = "cluster"
+# Total solar capacity per balancing area, as a fraction of annual demand
+solar_capacity_ratio  = 2.5
+# Total wind capacity per balancing area, as a fraction of annual demand
+wind_capacity_ratio  = 2.5
+
+max_wind_capacity_mw_per_cell = 5000
+max_solar_capacity_mw_per_cell = 5000
+
+[selection.cluster]
+# Number of K-means clusters per balancing area. Reduced to the cell count in areas with
+# fewer cells.
+cluster_count = 10
+# K-means random seed (0 to 2^32 - 1), so that runs are reproducible.
+seed = 192837
+# Number of K-means runs with different starting centroids; the best is kept.
+n_init = 10
+
+[dispatch]
+# Calendar years of demand and weather data to dispatch.
+dispatch_years = [2022, 2023, 2024]
+# Battery state of charge at hour 1, as a fraction of energy capacity.
+bess_initial_soc = 0.0
+# Battery round-trip efficiency.Applied entirely on charge:
+# energy stored = energy drawn * efficiency. Discharge is lossless.
+bess_rte = 0.88
+# Total battery storage capacity, as a fraction of average daily demand in most recent year
+bess_capacity_ratio = 0.5
+# Duration of bess storage in hours. Derive maximum power as capacity / duration.
+bess_duration = 4

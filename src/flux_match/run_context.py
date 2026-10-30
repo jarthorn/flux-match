@@ -29,6 +29,10 @@ class RunContext:
         return self.run_dir / "selected_sites.csv"
 
     @property
+    def clusters_path(self) -> Path:
+        return self.run_dir / "clusters.csv"
+
+    @property
     def vre_hourly_path(self) -> Path:
         return self.run_dir / "vre_by_ba_hourly.csv"
 
