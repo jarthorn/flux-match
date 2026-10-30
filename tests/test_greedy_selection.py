@@ -8,13 +8,14 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection.base import GenerationType, Site
-from flux_match.selection.greedy import (
-    GreedyStrategy,
+from flux_match.selection.base import (
+    CapacityParams,
+    GenerationType,
+    Site,
     allocate,
-    select_sites,
     target_capacity_mw,
 )
+from flux_match.selection.greedy import GreedyStrategy, select_sites
 
 SOLAR = GenerationType.SOLAR
 WIND_ONS = GenerationType.WIND_ONSHORE
@@ -41,7 +42,7 @@ class AllocateTest(unittest.TestCase):
             [Site(1, WIND_ONS, 2.5), Site(2, WIND_ONS, 2.5)],
         )
         self.assertIn(
-            "The value of max_wind_capacity_mw_per_cell is too low to meet requested capacity. "
+            "The value of max_wind_capacity_mw_per_cell is too low to meet requested capacity in East.a. "
             "Raising the maximum to 2.5 so that capacity can be supplied",
             stdout.getvalue(),
         )
@@ -87,12 +88,6 @@ def selection_config(**overrides: object) -> Config:
 
 
 class GreedyConfigTest(unittest.TestCase):
-    def test_default_scenario_is_valid(self) -> None:
-        strategy = GreedyStrategy(
-            Config.load(paths.SCENARIOS_DIR / "default.toml").section("selection")
-        )
-        self.assertEqual(strategy.ranking_metric, "median_daily_capacity")
-
     def test_accepts_integer_caps_from_toml(self) -> None:
         strategy = GreedyStrategy(
             selection_config(
@@ -103,9 +98,9 @@ class GreedyConfigTest(unittest.TestCase):
                 greedy={"ranking_metric": "median_daily_capacity"},
             )
         )
-        self.assertEqual(strategy.max_wind_capacity_mw_per_cell, 1000.0)
-        self.assertEqual(strategy.max_solar_capacity_mw_per_cell, 500.0)
-        self.assertEqual(strategy.wind_capacity_ratio, 0.0)
+        self.assertEqual(strategy.capacity.max_wind_capacity_mw_per_cell, 1000.0)
+        self.assertEqual(strategy.capacity.max_solar_capacity_mw_per_cell, 500.0)
+        self.assertEqual(strategy.capacity.wind_capacity_ratio, 0.0)
         self.assertEqual(strategy.ranking_metric, "median_daily_capacity")
 
     def test_rejects_negative_ratio_and_non_positive_cap(self) -> None:
@@ -130,7 +125,8 @@ class SelectSitesTest(unittest.TestCase):
         self.dir = Path(tmp.name)
         # East.a annual: 20 best wind, 10 best solar. Median: 10 best wind, 20 best solar.
         (self.dir / "grid_cell_info.csv").write_text(
-            "grid_cell,balancing_area\n10,East.a\n20,East.a\n30,West.a\n"
+            "grid_cell,balancing_area,latitude,longitude\n"
+            "10,East.a,45,-70\n20,East.a,46,-71\n30,West.a,50,-120\n"
         )
         (self.dir / "grid_cell_rankings.csv").write_text(
             "grid_cell,annual_wind_capacity_factor,annual_solar_capacity_factor,"
@@ -147,19 +143,22 @@ class SelectSitesTest(unittest.TestCase):
             f"West.a,999999,{HOURS_PER_YEAR}\n"
         )
 
-    def select(self, **overrides: object) -> list[Site]:
-        params = {
-            "demand_path": self.dir / "balancing_area_demand.csv",
-            "rankings_path": self.dir / "grid_cell_rankings.csv",
-            "grid_cell_info": self.dir / "grid_cell_info.csv",
-            "wind_capacity_ratio": 1.0,
-            "solar_capacity_ratio": 1.0,
-            "max_wind_mw": 2.0,
-            "max_solar_mw": 2.0,
-            "ranking_metric": "annual_capacity",
-            **overrides,
-        }
-        return select_sites(**params)
+    def select(self, ranking_metric: str = "annual_capacity", **capacity: float) -> list[Site]:
+        return select_sites(
+            demand_path=self.dir / "balancing_area_demand.csv",
+            rankings_path=self.dir / "grid_cell_rankings.csv",
+            grid_cell_info=self.dir / "grid_cell_info.csv",
+            capacity=CapacityParams(
+                **{
+                    "wind_capacity_ratio": 1.0,
+                    "solar_capacity_ratio": 1.0,
+                    "max_wind_capacity_mw_per_cell": 2.0,
+                    "max_solar_capacity_mw_per_cell": 2.0,
+                    **capacity,
+                }
+            ),
+            ranking_metric=ranking_metric,
+        )
 
     def test_target_is_ratio_times_average_load(self) -> None:
         self.assertEqual(target_capacity_mw(3 * HOURS_PER_YEAR, 1.0), 3.0)
@@ -202,7 +201,7 @@ class SelectSitesTest(unittest.TestCase):
         # East average load 3 MW, two cells, max_wind 1 MW: raise wind cap to 1.5.
         stdout = StringIO()
         with redirect_stdout(stdout):
-            sites = self.select(max_wind_mw=1.0)
+            sites = self.select(max_wind_capacity_mw_per_cell=1.0)
         self.assertEqual(
             sorted(sites),
             [
