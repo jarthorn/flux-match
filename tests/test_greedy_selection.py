@@ -4,7 +4,6 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
@@ -42,7 +41,8 @@ class AllocateTest(unittest.TestCase):
             [Site(1, WIND_ONS, 2.5), Site(2, WIND_ONS, 2.5)],
         )
         self.assertIn(
-            "The value of max_wind_capacity_mw_per_cell is too low to meet requested capacity in East.a. "
+            "The value of max_wind_capacity_mw_per_cell is too low to meet "
+            "requested capacity in East.a. "
             "Raising the maximum to 2.5 so that capacity can be supplied",
             stdout.getvalue(),
         )
