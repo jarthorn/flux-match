@@ -5,6 +5,7 @@ description = "A simple hourly energy dispatch model for Canadian balancing area
 readme = "README.md"
 requires-python = ">=3.15"
 dependencies = [
+    "numpy>=2.5.4",
     "scikit-learn>=1.9.1",
 ]
 

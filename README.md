@@ -23,7 +23,7 @@ When a step is re-run on an existing folder, it reads that folder's `config.toml
 
 ## Layout
 
-- `src/flux_match/`: the package. `cli.py` is the entry point; `steps/` holds fetch, preprocess and dispatch; `selection/` holds the site-selection strategies (one module per strategy, registered in `selection/__init__.py`); `viz/` holds the dashboard. Shared code: `config.py`, `run_context.py`, `paths.py`, `io.py`, `schema.py`, `errors.py`.
+- `src/flux_match/`: the package. `cli.py` is the entry point; `steps/` holds fetch, preprocess and dispatch; `selection/` holds the site-selection strategies (one module per strategy, registered in `selection/__init__.py`; `selection/total_variation.py` is a shared helper, the Total Variation Complementarity Index, rather than a strategy); `viz/` holds the dashboard. Shared code: `config.py`, `run_context.py`, `paths.py`, `io.py`, `schema.py`, `errors.py`.
 - `scenarios/`: scenario TOML files.
 - `data/`: raw inputs (git-ignored). `output/`: run folders (git-ignored).
 - `bin/`: batch scripts.
