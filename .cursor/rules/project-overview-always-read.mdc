@@ -5,4 +5,4 @@ alwaysApply: true
 
 # Project overview (mandatory)
 
-Read project-overview.md at the start of each session, and follow any requirements set out there.
+Read project-overview.md at the start of each session, and follow any requirements set out there. Also read README.md to get an overview of the project's goals, setup instructions, layout, and high level implementation details.
