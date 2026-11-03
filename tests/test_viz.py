@@ -12,6 +12,11 @@ from flux_match.schema import FIRST_HOUR_AFTER_LEAP_DAY, HOURS_PER_YEAR
 from flux_match.viz.app import _select_run_dir
 from flux_match.viz.charts import (
     DEFAULT_AUTHORITY,
+    ZOOM_OPTIONS,
+    Resolution,
+    Zoom,
+    aggregate_panels,
+    buckets_for,
     build_figure,
     default_authority,
     display_times_for,
@@ -99,6 +104,93 @@ class HourToDisplayTimeTest(unittest.TestCase):
             display_times_for((1, 2), 2024),
             ("2024-01-01 00:00:00", "2024-01-01 01:00:00"),
         )
+
+
+FULL_YEAR = tuple(range(1, HOURS_PER_YEAR + 1))
+
+
+class BucketsTest(unittest.TestCase):
+    def test_daily_buckets_are_whole_days_with_noon_midpoints(self) -> None:
+        buckets = buckets_for(FULL_YEAR, 2023, Resolution.DAILY)
+        self.assertEqual(len(buckets), 365)
+        self.assertTrue(all(bucket.stop - bucket.start == 24 for bucket in buckets))
+        self.assertEqual(buckets[0].midpoint, datetime(2023, 1, 1, 12))
+        self.assertEqual(buckets[-1].midpoint, datetime(2023, 12, 31, 12))
+
+    def test_leap_year_skips_february_29(self) -> None:
+        days = buckets_for(FULL_YEAR, 2024, Resolution.DAILY)
+        self.assertEqual(len(days), 365)
+        self.assertEqual(days[58].midpoint, datetime(2024, 2, 28, 12))
+        self.assertEqual(days[59].midpoint, datetime(2024, 3, 1, 12))
+        self.assertEqual(days[59].start, FIRST_HOUR_AFTER_LEAP_DAY - 1)
+
+        months = buckets_for(FULL_YEAR, 2024, Resolution.MONTHLY)
+        self.assertEqual(months[1].stop - months[1].start, 28 * 24)
+        self.assertEqual(months[1].midpoint, datetime(2024, 2, 15))
+        self.assertEqual(months[2].start, FIRST_HOUR_AFTER_LEAP_DAY - 1)
+
+    def test_monthly_buckets_follow_month_lengths(self) -> None:
+        months = buckets_for(FULL_YEAR, 2023, Resolution.MONTHLY)
+        self.assertEqual(len(months), 12)
+        self.assertEqual(
+            [(bucket.stop - bucket.start) // 24 for bucket in months],
+            [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
+        )
+        self.assertEqual(months[0].midpoint, datetime(2023, 1, 16, 12))
+        self.assertEqual(months[3].midpoint, datetime(2023, 4, 16))
+        self.assertEqual(months[-1].stop, HOURS_PER_YEAR)
+
+    def test_partial_bucket_fails(self) -> None:
+        with self.assertRaisesRegex(DataError, "2023-01-02 00:00:00 has 23 hours, expected 24"):
+            buckets_for(tuple(range(1, 48)), 2023, Resolution.DAILY)
+        with self.assertRaisesRegex(DataError, "2023-03-01 00:00:00 has 72 hours, expected 744"):
+            buckets_for(tuple(range(1, 744 + 672 + 72 + 1)), 2023, Resolution.MONTHLY)
+
+    def test_gap_in_hours_fails(self) -> None:
+        hours = tuple(h for h in FULL_YEAR if h != 100)
+        with self.assertRaisesRegex(DataError, "99 is followed by 101"):
+            buckets_for(hours, 2023, Resolution.DAILY)
+
+
+class AggregatePanelsTest(unittest.TestCase):
+    def test_hourly_passes_values_through(self) -> None:
+        panels = (("Demand", (1, 2), True),)
+        times, result = aggregate_panels((1, 2), 2024, panels, Resolution.HOURLY)
+        self.assertEqual(times, ("2024-01-01 00:00:00", "2024-01-01 01:00:00"))
+        self.assertEqual(result, panels)
+
+    def test_daily_mean_of_each_day(self) -> None:
+        hour_of_day = tuple(float((h - 1) % 24) for h in FULL_YEAR)
+        day_number = tuple(float((h - 1) // 24) for h in FULL_YEAR)
+        times, result = aggregate_panels(
+            FULL_YEAR,
+            2023,
+            (("Solar", hour_of_day, True), ("Demand", day_number, False)),
+            Resolution.DAILY,
+        )
+        self.assertEqual(times[0], "2023-01-01 12:00:00")
+        self.assertEqual(set(result[0][1]), {11.5})
+        self.assertEqual(result[1][1], tuple(float(day) for day in range(365)))
+        self.assertEqual(
+            [(title, pin) for title, _, pin in result], [("Solar", True), ("Demand", False)]
+        )
+
+    def test_monthly_mean_weights_each_hour_equally(self) -> None:
+        # January hours are 1, February hours are 2, ...; one extra spike at the start of March.
+        months = buckets_for(FULL_YEAR, 2024, Resolution.MONTHLY)
+        values = [0.0] * HOURS_PER_YEAR
+        for month, bucket in enumerate(months, start=1):
+            values[bucket.start : bucket.stop] = [float(month)] * (bucket.stop - bucket.start)
+        values[months[2].start] += 744.0
+        times, result = aggregate_panels(
+            FULL_YEAR, 2024, (("Demand", tuple(values), True),), Resolution.MONTHLY
+        )
+        self.assertEqual(times[1], "2024-02-15 00:00:00")
+        self.assertEqual(result[0][1][:4], (1.0, 2.0, 4.0, 4.0))
+
+    def test_value_count_must_match_hours(self) -> None:
+        with self.assertRaisesRegex(DataError, "Demand has 2 values for 8760 hours"):
+            aggregate_panels(FULL_YEAR, 2023, (("Demand", (1, 2), True),), Resolution.DAILY)
 
 
 def hourly_rows(
@@ -299,7 +391,7 @@ class BuildFigureTest(unittest.TestCase):
         self.assertTrue(xaxis.rangeslider.visible)
         self.assertEqual(figure.layout.hovermode, "x")
         self.assertEqual(figure.layout.hoversubplots, "axis")
-        self.assertEqual(figure.layout.uirevision, "East.a|2024")
+        self.assertEqual(figure.layout.uirevision, "East.a|2024|Hourly|Full year")
         self.assertEqual(figure.layout.xaxis.anchor, "y3")
         domains = [
             figure.layout.yaxis.domain,
@@ -308,6 +400,35 @@ class BuildFigureTest(unittest.TestCase):
         ]
         for previous, current in zip(domains[:-1], domains[1:], strict=True):
             self.assertLessEqual(current[1], previous[0])
+
+    def test_resolution_sets_hover_and_ui_revision(self) -> None:
+        panels = (("Demand", (10, 11), True),)
+        times = ("2024-01-16 12:00:00", "2024-02-15 00:00:00")
+        monthly = build_figure("East.a", 2024, times, panels, Resolution.MONTHLY)
+        self.assertIn("%b %Y", monthly.data[0].hovertemplate)
+        self.assertEqual(monthly.layout.uirevision, "East.a|2024|Monthly|Full year")
+        self.assertIsNone(monthly.layout.xaxis.range)
+
+    def test_zoom_shows_the_last_days_of_the_year(self) -> None:
+        panels = (("Demand", (10, 11), True),)
+        times = ("2024-12-30 12:00:00", "2024-12-31 12:00:00")
+        figure = build_figure("East.a", 2024, times, panels, Resolution.DAILY, Zoom.WEEK)
+        self.assertEqual(
+            list(figure.layout.xaxis.range), ["2024-12-25 00:00:00", "2025-01-01 00:00:00"]
+        )
+        self.assertEqual(figure.layout.uirevision, "East.a|2024|Daily|7 days")
+
+    def test_short_zoom_rejected_at_monthly_resolution(self) -> None:
+        self.assertEqual(ZOOM_OPTIONS[Resolution.MONTHLY], (Zoom.FULL_YEAR,))
+        with self.assertRaisesRegex(DataError, "30 days zoom is not available"):
+            build_figure(
+                "East.a",
+                2024,
+                ("2024-01-16 12:00:00",),
+                (("Demand", (10,), True),),
+                Resolution.MONTHLY,
+                Zoom.MONTH,
+            )
 
 
 class SelectRunDirTest(TempDirTest):

@@ -15,16 +15,25 @@ from flux_match import paths
 from flux_match.errors import FluxMatchError
 from flux_match.run_context import latest_run_dir, open_run, run_dir_timestamp
 from flux_match.viz.charts import (
+    ZOOM_OPTIONS,
     HourlyTable,
+    Resolution,
+    Zoom,
+    aggregate_panels,
     build_figure,
     default_authority,
-    display_times_for,
     load_dashboard_tables,
     panels_for,
 )
 
 # Fits the longest label ("Newfoundland and Labrador.b") without spanning the chart.
 AUTHORITY_SELECT_WIDTH = 340
+
+SERIES_DESCRIPTIONS = {
+    Resolution.HOURLY: "Hourly",
+    Resolution.DAILY: "Daily mean",
+    Resolution.MONTHLY: "Monthly mean",
+}
 
 
 @st.cache_data(show_spinner="Reading hourly files")
@@ -59,7 +68,7 @@ def main() -> None:
 
     st.title(f"Flux Match: {ctx.run_dir.name}")
 
-    year_col, authority_col = st.columns([1, 3])
+    year_col, authority_col, resolution_col, zoom_col = st.columns([1, 2, 1.5, 1.5])
     with year_col:
         year = st.selectbox("Year", years, index=years.index(max(years)))
     try:
@@ -76,23 +85,53 @@ def main() -> None:
             index=authorities.index(default_authority(authorities)),
             width=AUTHORITY_SELECT_WIDTH,
         )
+    with resolution_col:
+        resolution = Resolution(
+            st.segmented_control(
+                "Aggregation",
+                list(Resolution),
+                default=Resolution.HOURLY,
+                required=True,
+            )
+        )
+    with zoom_col:
+        zoom_options = ZOOM_OPTIONS[resolution]
+        # A key per resolution, so changing the options never leaves a stale selection.
+        zoom = Zoom(
+            st.segmented_control(
+                "Zoom",
+                list(zoom_options),
+                default=Zoom.FULL_YEAR,
+                required=True,
+                key=f"zoom_{resolution}",
+                disabled=len(zoom_options) == 1,
+            )
+        )
+
+    try:
+        display_times, panels = aggregate_panels(
+            demand.hours, year, panels_for(authority, demand, vre, dispatch), resolution
+        )
+    except FluxMatchError as e:
+        st.error(str(e))
+        st.stop()
 
     st.plotly_chart(
-        build_figure(
-            authority,
-            year,
-            display_times_for(demand.hours, year),
-            panels_for(authority, demand, vre, dispatch),
-        ),
+        build_figure(authority, year, display_times, panels, resolution, zoom),
         width="stretch",
         config={"scrollZoom": False, "displaylogo": False},
     )
     st.caption(
-        f"Hourly wind and solar generation for {authority} from the sites selected in this run, "
-        "using the single capacity-factor year in the scenario. "
+        f"{SERIES_DESCRIPTIONS[resolution]} wind and solar generation for {authority} from the "
+        "sites selected in this run, using the single capacity-factor year in the scenario. "
         "Battery output is positive when discharging and negative when charging. "
         "Net demand is demand minus wind, solar, and battery output."
     )
+    if resolution is not Resolution.HOURLY:
+        st.caption(
+            f"Each point is the mean of the hourly values in its {resolution.lower()} bucket, "
+            "plotted at the midpoint of the bucket."
+        )
     st.caption(
         f"Hour 1 is {year}-01-01 00:00. Leap years omit February 29, matching the stored "
         "8760-hour series. There is no timezone and no daylight-saving shift."
