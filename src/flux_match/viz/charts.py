@@ -8,6 +8,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -18,11 +19,33 @@ from flux_match.io import iter_csv
 from flux_match.run_context import RunContext
 from flux_match.schema import FIRST_HOUR_AFTER_LEAP_DAY, HOURS_PER_YEAR
 
-RANGE_BUTTONS = (
-    {"count": 7, "label": "7 days", "step": "day", "stepmode": "backward"},
-    {"count": 30, "label": "30 days", "step": "day", "stepmode": "backward"},
-    {"step": "all", "label": "Full year"},
-)
+
+class Resolution(StrEnum):
+    HOURLY = "Hourly"
+    DAILY = "Daily"
+    MONTHLY = "Monthly"
+
+
+class Zoom(StrEnum):
+    WEEK = "7 days"
+    MONTH = "30 days"
+    FULL_YEAR = "Full year"
+
+
+ZOOM_DAYS = {Zoom.WEEK: 7, Zoom.MONTH: 30}
+
+# A 7- or 30-day window holds at most one monthly point, so monthly charts only get "Full year".
+ZOOM_OPTIONS = {
+    Resolution.HOURLY: tuple(Zoom),
+    Resolution.DAILY: tuple(Zoom),
+    Resolution.MONTHLY: (Zoom.FULL_YEAR,),
+}
+
+HOVER_TEMPLATES = {
+    Resolution.HOURLY: "%{x|%Y-%m-%d %H:%M} %{y} MW ",
+    Resolution.DAILY: "%{x|%Y-%m-%d} mean %{y:,.1f} MW ",
+    Resolution.MONTHLY: "%{x|%b %Y} mean %{y:,.1f} MW ",
+}
 
 DEFAULT_AUTHORITY = "Ontario.a"
 
@@ -33,6 +56,8 @@ PANEL_SPECS = (
     ("battery_output_mw", "Battery output", True),
     ("net_demand_mw", "Net demand", True),
 )
+
+Panel = tuple[str, tuple[int | float, ...], bool]
 
 
 @dataclass(frozen=True)
@@ -74,6 +99,93 @@ def format_display_time(moment: datetime) -> str:
 
 def display_times_for(hours: Sequence[int], year: int) -> tuple[str, ...]:
     return tuple(format_display_time(hour_to_display_time(hour, year)) for hour in hours)
+
+
+@dataclass(frozen=True)
+class Bucket:
+    start: int
+    stop: int
+    midpoint: datetime
+
+
+def _bucket_key(moment: datetime, resolution: Resolution) -> tuple[int, ...]:
+    if resolution is Resolution.DAILY:
+        return (moment.month, moment.day)
+    if resolution is Resolution.MONTHLY:
+        return (moment.month,)
+    raise DataError(f"No buckets for {resolution} resolution")
+
+
+def _expected_bucket_hours(moment: datetime, resolution: Resolution) -> int:
+    if resolution is Resolution.DAILY:
+        return 24
+    days = calendar.monthrange(moment.year, moment.month)[1]
+    if moment.month == 2 and calendar.isleap(moment.year):
+        days -= 1
+    return 24 * days
+
+
+def buckets_for(hours: Sequence[int], year: int, resolution: Resolution) -> tuple[Bucket, ...]:
+    """Index ranges into `hours` for each whole day or month, and the midpoint of each.
+
+    Hours must be consecutive and every bucket complete, so a mean never silently covers
+    a partial day or month. Leap-year Februarys have 28 days, matching the stored series.
+    """
+    if not hours:
+        raise DataError("No hours to aggregate")
+    for previous, hour in zip(hours, hours[1:], strict=False):
+        if hour != previous + 1:
+            raise DataError(f"Hours are not consecutive: {previous} is followed by {hour}")
+    moments = [hour_to_display_time(hour, year) for hour in hours]
+    buckets: list[Bucket] = []
+    start = 0
+    for index in range(1, len(moments) + 1):
+        if index < len(moments) and _bucket_key(moments[index], resolution) == _bucket_key(
+            moments[start], resolution
+        ):
+            continue
+        first = moments[start]
+        size = index - start
+        expected = _expected_bucket_hours(first, resolution)
+        if size != expected:
+            raise DataError(
+                f"{resolution} bucket starting {format_display_time(first)} has {size} hours, "
+                f"expected {expected}"
+            )
+        buckets.append(Bucket(start, index, first + timedelta(hours=size / 2)))
+        start = index
+    return tuple(buckets)
+
+
+def aggregate_panels(
+    hours: Sequence[int],
+    year: int,
+    panels: Sequence[Panel],
+    resolution: Resolution,
+) -> tuple[tuple[str, ...], tuple[Panel, ...]]:
+    """Display times and panel values at `resolution`.
+
+    Daily and monthly values are the mean of each bucket's hours, plotted at its midpoint.
+    """
+    if resolution is Resolution.HOURLY:
+        return display_times_for(hours, year), tuple(panels)
+    buckets = buckets_for(hours, year, resolution)
+    for title, megawatts, _ in panels:
+        if len(megawatts) != len(hours):
+            raise DataError(f"{title} has {len(megawatts)} values for {len(hours)} hours")
+    times = tuple(format_display_time(bucket.midpoint) for bucket in buckets)
+    aggregated = tuple(
+        (
+            title,
+            tuple(
+                math.fsum(megawatts[bucket.start : bucket.stop]) / (bucket.stop - bucket.start)
+                for bucket in buckets
+            ),
+            pin_zero,
+        )
+        for title, megawatts, pin_zero in panels
+    )
+    return times, aggregated
 
 
 def load_hourly_table(
@@ -194,7 +306,7 @@ def panels_for(
     demand: HourlyTable,
     vre: HourlyTable,
     dispatch: HourlyTable,
-) -> tuple[tuple[str, tuple[int | float, ...], bool], ...]:
+) -> tuple[Panel, ...]:
     sources = {
         "demand_mw": demand,
         "wind_mw": vre,
@@ -227,14 +339,19 @@ def build_figure(
     year: int,
     display_times: Sequence[str],
     panels: Sequence[tuple[str, Sequence[int | float], bool]],
+    resolution: Resolution = Resolution.HOURLY,
+    zoom: Zoom = Zoom.FULL_YEAR,
 ) -> go.Figure:
     """Stacked lines on one x-axis, so a hover spike is drawn through every panel.
 
     `panels` is `(title, megawatts, pin_y_at_zero)` from top to bottom.
-    `uirevision` resets the zoom when the authority or year changes.
+    `zoom` shows the last 7 or 30 days of the year, or all of it.
+    `uirevision` resets the zoom when the authority, year, resolution, or zoom changes.
     """
     if not panels:
         raise DataError("No series to chart")
+    if zoom not in ZOOM_OPTIONS[resolution]:
+        raise DataError(f"{zoom} zoom is not available at {resolution} resolution")
     domains = _panel_domains(len(panels))
     figure = go.Figure()
     x_values = list(display_times)
@@ -251,7 +368,7 @@ def build_figure(
                 line={"width": 1},
                 name=title,
                 yaxis=yaxis_name,
-                hovertemplate="%{x|%Y-%m-%d %H:%M} %{y} MW ",
+                hovertemplate=HOVER_TEMPLATES[resolution],
             )
         )
         yaxis: dict[str, object] = {"title": "MW", "domain": domain, "anchor": "x"}
@@ -272,33 +389,31 @@ def build_figure(
         )
 
     bottom_yaxis = "y" if len(panels) == 1 else f"y{len(panels)}"
+    xaxis: dict[str, object] = {
+        "type": "date",
+        "anchor": bottom_yaxis,
+        "domain": [0, 1],
+        "rangeslider": {"visible": True, "thickness": 0.06},
+        "showspikes": True,
+        "spikemode": "across",
+        "spikesnap": "data",
+        "spikecolor": "#333333",
+        "spikethickness": 1,
+    }
+    if zoom is not Zoom.FULL_YEAR:
+        end = datetime(year + 1, 1, 1)
+        start = end - timedelta(days=ZOOM_DAYS[zoom])
+        xaxis["range"] = [format_display_time(start), format_display_time(end)]
     figure.update_layout(
-        xaxis={
-            "type": "date",
-            "anchor": bottom_yaxis,
-            "domain": [0, 1],
-            "rangeslider": {"visible": True, "thickness": 0.06},
-            "rangeselector": {
-                "buttons": list(RANGE_BUTTONS),
-                "x": 0,
-                "xanchor": "left",
-                "y": 1.02,
-                "yanchor": "bottom",
-            },
-            "showspikes": True,
-            "spikemode": "across",
-            "spikesnap": "data",
-            "spikecolor": "#333333",
-            "spikethickness": 1,
-        },
+        xaxis=xaxis,
         annotations=annotations,
         height=260 * len(panels) + 120,
         hovermode="x",
         hoversubplots="axis",
         spikedistance=-1,
-        uirevision=f"{authority}|{year}",
+        uirevision=f"{authority}|{year}|{resolution}|{zoom}",
         showlegend=False,
-        margin={"l": 64, "r": 24, "t": 72, "b": 24},
+        margin={"l": 64, "r": 24, "t": 40, "b": 24},
     )
     return figure
 
