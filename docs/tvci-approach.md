@@ -1,6 +1,6 @@
 # Overview
 
-This file describes an approach to selecting wind and solar generation sites based on complementarity. I intend to refine this approach depending on experimental results obtained from running this site selection algorithm through flux-match. The same algorithm should be repeated independently for each resource type (wind,solar). This particular approach makes use of the Total Variation Complementarity Index to select sites with maximally complementary generation profiles. Lines 141-162 of sustainability-14-08514.xml provide formulas for total variation (section 2.1), and total variation complementarity index (section 2.2).
+This file describes an approach to selecting wind and solar generation sites based on complementarity. I intend to refine this approach depending on experimental results obtained from running this site selection algorithm through flux-match. The same algorithm should be repeated independently for each resource type (wind,solar). This particular approach makes use of the Total Variation Complementarity Index (TVCI) to select sites with maximally complementary generation profiles. Lines 141-162 of sustainability-14-08514.xml provide formulas for total variation (section 2.1), and total variation complementarity index (section 2.2).
 
 # Approach
 

@@ -151,6 +151,59 @@ def rank(cell: RankedCell, generation_type: GenerationType) -> int:
     return cell.wind_rank
 
 
+@dataclass(frozen=True)
+class Allocation:
+    """One balancing area's capacity target for one generation type."""
+
+    balancing_area: str
+    generation_type: GenerationType
+    # The area's grid cells, best-ranked first.
+    ranked: list[int]
+    target_mw: float
+    max_mw: float
+
+
+def plan_allocations(
+    demand_path: Path,
+    cells_by_ba: Mapping[str, Sequence[RankedCell]],
+    capacity: CapacityParams,
+) -> list[Allocation]:
+    """Each balancing area's wind and solar target, by area name then SELECTED_TYPES."""
+    _, demand = read_ba_demand(demand_path)
+    unknown = sorted(set(cells_by_ba) - set(demand))
+    if unknown:
+        raise DataError(f"grid cells in balancing areas with no demand data: {unknown}")
+
+    allocations: list[Allocation] = []
+    for ba, demand_mwh in sorted(demand.items()):
+        if demand_mwh < 0:
+            raise DataError(f"{ba}: annual demand is negative: {demand_mwh}")
+        cells = cells_by_ba.get(ba, ())
+        for generation_type in SELECTED_TYPES:
+            ranked = [c.grid_cell for c in sorted(cells, key=lambda c: rank(c, generation_type))]
+            allocations.append(
+                Allocation(
+                    balancing_area=ba,
+                    generation_type=generation_type,
+                    ranked=ranked,
+                    target_mw=target_capacity_mw(demand_mwh, capacity.ratio(generation_type)),
+                    max_mw=capacity.max_mw(generation_type),
+                )
+            )
+    return allocations
+
+
+def allocate_in_order(allocation: Allocation, cells: Sequence[int]) -> list[Site]:
+    """Place `allocation`'s target in `cells`, in that order (see allocate)."""
+    return allocate(
+        cells,
+        allocation.target_mw,
+        allocation.max_mw,
+        allocation.generation_type,
+        allocation.balancing_area,
+    )
+
+
 def select_per_balancing_area(
     demand_path: Path,
     cells_by_ba: Mapping[str, Sequence[RankedCell]],
@@ -162,27 +215,9 @@ def select_per_balancing_area(
     `fill_order` is given the area's grid cells best-ranked first, for one generation type,
     and returns them in the order to fill.
     """
-    _, demand = read_ba_demand(demand_path)
-    unknown = sorted(set(cells_by_ba) - set(demand))
-    if unknown:
-        raise DataError(f"grid cells in balancing areas with no demand data: {unknown}")
-
     sites: list[Site] = []
-    for ba, demand_mwh in sorted(demand.items()):
-        if demand_mwh < 0:
-            raise DataError(f"{ba}: annual demand is negative: {demand_mwh}")
-        cells = cells_by_ba.get(ba, ())
-        for generation_type in SELECTED_TYPES:
-            ranked = [c.grid_cell for c in sorted(cells, key=lambda c: rank(c, generation_type))]
-            sites.extend(
-                allocate(
-                    fill_order(ranked),
-                    target_capacity_mw(demand_mwh, capacity.ratio(generation_type)),
-                    capacity.max_mw(generation_type),
-                    generation_type,
-                    ba,
-                )
-            )
+    for allocation in plan_allocations(demand_path, cells_by_ba, capacity):
+        sites.extend(allocate_in_order(allocation, fill_order(allocation.ranked)))
     return sites
 
 

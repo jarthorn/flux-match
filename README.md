@@ -66,3 +66,7 @@ The program is divided into the following steps:
 ### Cluster
 
 The "cluster" strategy (see `docs/clustering-approach.md`) splits each balancing area's cells into `[selection.cluster] cluster_count` geographic clusters with K-means (seeded by `seed`, restarted `n_init` times). The strategy then fills cells in rounds, taking the best remaining cell by annual capacity factor from every cluster in each round; it also writes the clusters to `clusters.csv` in the run folder for offline analysis.
+
+### Total Variation Complementarity Index
+
+The "tvci" strategy (see `docs/complementarity-approach.md`) picks sites whose hourly output complements the sites already picked, separately for each balancing area and for wind and solar. With N = ceil(target / per-cell cap) sites needed, the candidates are the area's top ceil(`[selection.tvci] candidate_multiple` * N) cells by annual capacity factor. The best candidate is picked first; each later pick is the candidate with the highest Total Variation Complementarity Index against the mean hourly capacity factor of the cells picked so far. With `candidate_multiple = 1` it uses the same cells as greedy by annual capacity.
