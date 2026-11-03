@@ -1,5 +1,4 @@
-# Default scenario. Every parameter a run uses must be set here; there are no defaults
-# in code. A copy is saved as config.toml in each run folder.
+# Greedy selection strategy with 80% of generation from wind.
 
 [fetch]
 # Two-letter province codes as used by the CODERS API.
