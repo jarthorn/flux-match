@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from flux_match.config import Config
 from flux_match.errors import ConfigError, RunStateError
 from flux_match.run_context import (
     CONFIG_NAME,
@@ -27,7 +28,12 @@ class RunContextTest(unittest.TestCase):
     def test_run_folder_named_by_timestamp_and_scenario_with_config_snapshot(self):
         ctx = create_run(self.scenario, self.output, STARTED)
         self.assertEqual(ctx.run_dir, self.output / "20261027-0905-greedy")
-        self.assertEqual((ctx.run_dir / CONFIG_NAME).read_text(), self.scenario.read_text())
+        # Snapshot is the resolved defaults + scenario merge, not a raw copy of the file.
+        self.assertEqual(
+            (ctx.run_dir / CONFIG_NAME).read_text(), Config.load(self.scenario).to_toml()
+        )
+        self.assertEqual(ctx.config.section("selection").get("strategy", str), "greedy")
+        self.assertIn("AB", ctx.config.section("fetch").get_list("provinces", str))
 
     def test_existing_run_folder_is_never_reused(self):
         create_run(self.scenario, self.output, STARTED)

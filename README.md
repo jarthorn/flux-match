@@ -6,7 +6,7 @@ Flux Match is a simple dispatch model that simulates dispatching variable genera
 
 ## Usage
 
-Each run is configured by a scenario file, `scenarios/<name>.toml`, which sets every parameter the run uses, including strategy-specific ones. Steps 2-4 write to a new run folder, `output/<YYYYMMDD-HHMM>-<scenario>/`, which also holds a `config.toml` snapshot of the scenario and a `run.json` manifest (git commit, completed steps, and per-balancing-area `dispatch_stats` for comparing site selection strategies).
+Each run is configured by a scenario file, `scenarios/<name>.toml`. Shared parameters live in `scenarios/defaults.toml`; a scenario only needs to set what it overrides (including `selection.strategy`). Steps 2-4 write to a new run folder, `output/<YYYYMMDD-HHMM>-<scenario>/`, which also holds a `config.toml` snapshot of the resolved defaults+scenario merge and a `run.json` manifest (git commit, completed steps, and per-balancing-area `dispatch_stats` for comparing site selection strategies).
 
 ```bash
 bin/run [--scenario NAME]                            # steps 1-4 in a new run folder (default scenario: "balanced")
@@ -24,7 +24,7 @@ When a step is re-run on an existing folder, it reads that folder's `config.toml
 ## Layout
 
 - `src/flux_match/`: the package. `cli.py` is the entry point; `steps/` holds fetch, preprocess and dispatch; `selection/` holds the site-selection strategies (one module per strategy, registered in `selection/__init__.py`; `selection/total_variation.py` is a shared helper, the Total Variation Complementarity Index, rather than a strategy); `viz/` holds the dashboard. Shared code: `config.py`, `run_context.py`, `paths.py`, `io.py`, `schema.py`, `errors.py`.
-- `scenarios/`: scenario TOML files.
+- `scenarios/`: scenario TOML files, plus `defaults.toml` for shared baseline values.
 - `data/`: raw inputs (git-ignored). `output/`: run folders (git-ignored).
 - `bin/`: batch scripts.
 - `tests/`: unit tests (`unittest`).

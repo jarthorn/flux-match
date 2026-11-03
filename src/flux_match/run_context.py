@@ -1,7 +1,6 @@
 """Run folders: creation, the config snapshot, and tracking which steps have completed."""
 
 import json
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -87,15 +86,17 @@ def _stats_key(step: str) -> str:
 def create_run(
     scenario_file: Path, output_dir: Path = paths.OUTPUT_DIR, started: datetime | None = None
 ) -> RunContext:
-    Config.load(scenario_file)  # fail on a bad scenario before creating the run folder
+    # Resolve defaults + scenario before creating the folder so a bad file leaves no residue.
+    config = Config.load(scenario_file)
     started = started or datetime.now()
     run_dir = output_dir / paths.run_dir_name(scenario_file.stem, started)
     try:
         run_dir.mkdir(parents=True, exist_ok=False)
     except FileExistsError:
         raise RunStateError(f"Run folder already exists: {run_dir}") from None
-    shutil.copyfile(scenario_file, run_dir / CONFIG_NAME)
-    ctx = RunContext(run_dir, Config.load(run_dir / CONFIG_NAME))
+    # Snapshot the resolved config so re-runs do not pick up later changes to defaults.toml.
+    (run_dir / CONFIG_NAME).write_text(config.to_toml())
+    ctx = RunContext(run_dir, Config.load(run_dir / CONFIG_NAME, inherit_defaults=False))
     ctx._write_manifest(
         {
             "scenario": scenario_file.stem,
@@ -111,7 +112,7 @@ def open_run(run_dir: Path) -> RunContext:
     for name in (CONFIG_NAME, MANIFEST_NAME):
         if not (run_dir / name).is_file():
             raise RunStateError(f"Not a run folder (missing {name}): {run_dir}")
-    return RunContext(run_dir, Config.load(run_dir / CONFIG_NAME))
+    return RunContext(run_dir, Config.load(run_dir / CONFIG_NAME, inherit_defaults=False))
 
 
 def latest_run_dir(output_dir: Path = paths.OUTPUT_DIR) -> Path:

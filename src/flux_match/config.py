@@ -1,13 +1,15 @@
 """Typed access to scenario TOML files.
 
-Every lookup is required: parameters have no defaults in code, so each value used by a
-run is visible in its config.toml snapshot.
+Scenario files inherit undefined keys from scenarios/defaults.toml. Lookups are still
+required with no defaults in code, so each value used by a run is visible in its
+config.toml snapshot (the resolved merge of defaults and the scenario).
 """
 
 import tomllib
 from pathlib import Path
 from typing import Any, Self
 
+from flux_match import paths
 from flux_match.errors import ConfigError
 
 
@@ -20,14 +22,15 @@ class Config:
         self._prefix = prefix
 
     @classmethod
-    def load(cls, path: Path) -> Self:
-        if not path.is_file():
-            raise ConfigError(f"Config file not found: {path}")
-        try:
-            data = tomllib.loads(path.read_text())
-        except tomllib.TOMLDecodeError as e:
-            raise ConfigError(f"{path}: invalid TOML: {e}") from e
+    def load(cls, path: Path, *, inherit_defaults: bool = True) -> Self:
+        data = _read_toml(path)
+        if inherit_defaults and path.resolve() != paths.defaults_path().resolve():
+            data = _deep_merge(_read_toml(paths.defaults_path()), data)
         return cls(data, path)
+
+    def to_toml(self) -> str:
+        """Serialize this config's top-level table as TOML (for run-folder snapshots)."""
+        return _dump_toml(self._data)
 
     def section(self, key: str) -> Config:
         value = self._lookup(key)
@@ -69,3 +72,65 @@ class Config:
 
     def _qualify(self, key: str) -> str:
         return f"{self._prefix}.{key}" if self._prefix else key
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+    try:
+        data = tomllib.loads(path.read_text())
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path}: invalid TOML: {e}") from e
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path}: root must be a table")
+    return data
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Return a new dict: overlay keys win; nested tables are merged recursively."""
+    result = dict(base)
+    for key, value in overlay.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _dump_toml(data: dict[str, Any]) -> str:
+    """Minimal TOML writer for the scalar, array, and nested-table shapes we use."""
+    top_scalars = "".join(
+        f"{key} = {_dump_value(value)}\n"
+        for key, value in data.items()
+        if not isinstance(value, dict)
+    )
+    tables = [_dump_section(key, value) for key, value in data.items() if isinstance(value, dict)]
+    if top_scalars and tables:
+        return top_scalars + "\n" + "\n".join(tables)
+    return top_scalars + "\n".join(tables)
+
+
+def _dump_section(path: str, data: dict[str, Any]) -> str:
+    """One `[path]` table, with any nested tables emitted after its keys."""
+    lines = [f"[{path}]\n"]
+    nested: list[str] = []
+    for key, value in data.items():
+        if isinstance(value, dict):
+            nested.append(_dump_section(f"{path}.{key}", value))
+        else:
+            lines.append(f"{key} = {_dump_value(value)}\n")
+    return "".join(lines) + "".join(nested)
+
+
+def _dump_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if type(value) is int:
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(value, list):
+        return "[ " + ", ".join(_dump_value(v) for v in value) + " ]"
+    raise TypeError(f"unsupported TOML value type: {type(value).__name__}")
