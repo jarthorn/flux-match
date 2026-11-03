@@ -214,7 +214,7 @@ class FetchTest(unittest.TestCase):
 
     def test_default_scenario_is_valid_and_plans_one_download_per_combination(self):
         params = FetchParams.from_config(
-            Config.load(paths.SCENARIOS_DIR / "default.toml").section("fetch")
+            Config.load(paths.SCENARIOS_DIR / "balanced.toml").section("fetch")
         )
         expected = (
             1

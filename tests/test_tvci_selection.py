@@ -39,7 +39,6 @@ def reference_order(capacity_factors: np.ndarray, count: int) -> list[int]:
         ]
         best = remaining.pop(scores.index(max(scores)))
         picked.append(best)
-        x = len(picked)
         total += capacity_factors[best]
     return picked
 

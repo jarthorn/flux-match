@@ -1,5 +1,5 @@
-# Default scenario. Every parameter a run uses must be set here; there are no defaults
-# in code. A copy is saved as config.toml in each run folder.
+# Default scenario (used when --scenario is omitted). Every parameter a run uses must
+# be set here; there are no defaults in code. A copy is saved as config.toml in each run folder.
 
 [fetch]
 # Two-letter province codes as used by the CODERS API.
