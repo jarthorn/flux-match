@@ -11,7 +11,7 @@ from flux_match.errors import FluxMatchError
 from flux_match.run_context import RUN_STEPS, RunContext, create_run, open_run
 from flux_match.steps import dispatch, fetch, preprocess
 
-DEFAULT_SCENARIO = "default"
+DEFAULT_SCENARIO = "balanced"
 
 RUN_STEP_FUNCTIONS: dict[str, Callable[[RunContext], None]] = {
     "select": selection.run,

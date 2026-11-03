@@ -64,7 +64,7 @@ class TempDirTest(unittest.TestCase):
 
 class DispatchParamsTest(unittest.TestCase):
     def test_default_scenario_is_valid(self) -> None:
-        config = Config.load(paths.SCENARIOS_DIR / "default.toml")
+        config = Config.load(paths.SCENARIOS_DIR / "balanced.toml")
         DispatchParams.from_config(config.section("dispatch"))
 
     def test_integer_duration_accepted_as_float(self) -> None:
