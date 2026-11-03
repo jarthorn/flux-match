@@ -13,6 +13,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 CODERS_DATA_DIR = DATA_DIR / "coders"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
+DEFAULTS_NAME = "defaults.toml"
 
 BA_DEMAND_FILENAME = "balancing_area_demand.csv"
 RANKINGS_FILENAME = "grid_cell_rankings.csv"
@@ -22,6 +23,10 @@ TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
 
 def ba_demand_hourly_filename(year: int) -> str:
     return f"balancing_area_demand_hourly_{year}.csv"
+
+
+def defaults_path() -> Path:
+    return SCENARIOS_DIR / DEFAULTS_NAME
 
 
 def scenario_path(name_or_path: str) -> Path:
