@@ -11,14 +11,14 @@ from flux_match.run_context import create_run
 from flux_match.schema import FIRST_HOUR_AFTER_LEAP_DAY, HOURS_PER_YEAR
 from flux_match.viz.app import _select_run_dir
 from flux_match.viz.charts import (
-    DEFAULT_AUTHORITY,
+    DEFAULT_BALANCING_AREA,
     ZOOM_OPTIONS,
     Resolution,
     Zoom,
     aggregate_panels,
     buckets_for,
     build_figure,
-    default_authority,
+    default_balancing_area,
     display_times_for,
     hour_to_display_time,
     load_dashboard_tables,
@@ -222,7 +222,7 @@ class LoadHourlyTableTest(TempDirTest):
             ),
         )
         table = load_hourly_table(path, ("demand_mw",), hours_in_year=HOURS)
-        self.assertEqual(table.authorities, ("East.a", "West.a"))
+        self.assertEqual(table.balancing_areas, ("East.a", "West.a"))
         self.assertEqual(table.hours, (1, 2, 3))
         self.assertEqual(values(table, "East.a", "demand_mw"), (10, 20, 30))
 
@@ -305,9 +305,11 @@ class AlignAndPanelsTest(TempDirTest):
         with self.assertRaisesRegex(DataError, "balancing areas"):
             require_aligned((a, b))
 
-    def test_default_authority_prefers_ontario(self) -> None:
-        self.assertEqual(default_authority(("Alberta.a", DEFAULT_AUTHORITY)), DEFAULT_AUTHORITY)
-        self.assertEqual(default_authority(("Alberta.a", "Quebec.a")), "Alberta.a")
+    def test_default_balancing_area_prefers_ontario(self) -> None:
+        self.assertEqual(
+            default_balancing_area(("Alberta.a", DEFAULT_BALANCING_AREA)), DEFAULT_BALANCING_AREA
+        )
+        self.assertEqual(default_balancing_area(("Alberta.a", "Quebec.a")), "Alberta.a")
 
     def test_panels_read_each_source_column(self) -> None:
         demand = self._table("demand.csv", "demand_mw", {"East.a": [100, 110, 120]})

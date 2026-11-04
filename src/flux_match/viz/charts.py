@@ -47,7 +47,7 @@ HOVER_TEMPLATES = {
     Resolution.MONTHLY: "%{x|%b %Y} mean %{y:,.1f} MW ",
 }
 
-DEFAULT_AUTHORITY = "Ontario.a"
+DEFAULT_BALANCING_AREA = "Ontario.a"
 
 PANEL_SPECS = (
     ("wind_mw", "Wind generation", True),
@@ -63,7 +63,7 @@ Panel = tuple[str, tuple[int | float, ...], bool]
 @dataclass(frozen=True)
 class HourlyTable:
     path: Path
-    authorities: tuple[str, ...]
+    balancing_areas: tuple[str, ...]
     hours: tuple[int, ...]
     series: dict[str, dict[str, tuple[int | float, ...]]]
 
@@ -242,7 +242,7 @@ def load_hourly_table(
     }
     return HourlyTable(
         path=path,
-        authorities=tuple(sorted(series)),
+        balancing_areas=tuple(sorted(series)),
         hours=tuple(range(1, hours_in_year + 1)),
         series=series,
     )
@@ -279,30 +279,30 @@ def require_aligned(tables: Sequence[HourlyTable]) -> None:
     for table in tables[1:]:
         if table.hours != first.hours:
             raise DataError(f"{table.path.name} hours do not match {first.path.name}")
-        if table.authorities != first.authorities:
+        if table.balancing_areas != first.balancing_areas:
             raise DataError(
-                f"{table.path.name} balancing areas {list(table.authorities)} do not match "
-                f"{first.path.name} {list(first.authorities)}"
+                f"{table.path.name} balancing areas {list(table.balancing_areas)} do not match "
+                f"{first.path.name} {list(first.balancing_areas)}"
             )
 
 
-def values(table: HourlyTable, authority: str, column: str) -> tuple[int | float, ...]:
-    found = table.series.get(authority)
+def values(table: HourlyTable, balancing_area: str, column: str) -> tuple[int | float, ...]:
+    found = table.series.get(balancing_area)
     if found is None or column not in found:
-        raise DataError(f"{table.path.name} has no {column!r} series for {authority!r}")
+        raise DataError(f"{table.path.name} has no {column!r} series for {balancing_area!r}")
     return found[column]
 
 
-def default_authority(authorities: Sequence[str]) -> str:
-    if not authorities:
+def default_balancing_area(balancing_areas: Sequence[str]) -> str:
+    if not balancing_areas:
         raise DataError("No balancing areas to chart")
-    if DEFAULT_AUTHORITY in authorities:
-        return DEFAULT_AUTHORITY
-    return authorities[0]
+    if DEFAULT_BALANCING_AREA in balancing_areas:
+        return DEFAULT_BALANCING_AREA
+    return balancing_areas[0]
 
 
 def panels_for(
-    authority: str,
+    balancing_area: str,
     demand: HourlyTable,
     vre: HourlyTable,
     dispatch: HourlyTable,
@@ -315,7 +315,7 @@ def panels_for(
         "net_demand_mw": dispatch,
     }
     return tuple(
-        (title, values(sources[column], authority, column), pin_zero)
+        (title, values(sources[column], balancing_area, column), pin_zero)
         for column, title, pin_zero in PANEL_SPECS
     )
 
@@ -335,7 +335,7 @@ def _panel_domains(count: int) -> list[tuple[float, float]]:
 
 
 def build_figure(
-    authority: str,
+    balancing_area: str,
     year: int,
     display_times: Sequence[str],
     panels: Sequence[tuple[str, Sequence[int | float], bool]],
@@ -346,7 +346,7 @@ def build_figure(
 
     `panels` is `(title, megawatts, pin_y_at_zero)` from top to bottom.
     `zoom` shows the last 7 or 30 days of the year, or all of it.
-    `uirevision` resets the zoom when the authority, year, resolution, or zoom changes.
+    `uirevision` resets the zoom when the balancing_area, year, resolution, or zoom changes.
     """
     if not panels:
         raise DataError("No series to chart")
@@ -411,7 +411,7 @@ def build_figure(
         hovermode="x",
         hoversubplots="axis",
         spikedistance=-1,
-        uirevision=f"{authority}|{year}|{resolution}|{zoom}",
+        uirevision=f"{balancing_area}|{year}|{resolution}|{zoom}",
         showlegend=False,
         margin={"l": 64, "r": 24, "t": 40, "b": 24},
     )
