@@ -105,11 +105,7 @@ def create_run(
     # Resolve defaults + scenario before creating the folder so a bad file leaves no residue.
     config = Config.load(scenario_file)
     started = started or datetime.now()
-    run_dir = output_dir / paths.run_dir_name(scenario_file.stem, started)
-    try:
-        run_dir.mkdir(parents=True, exist_ok=False)
-    except FileExistsError:
-        raise RunStateError(f"Run folder already exists: {run_dir}") from None
+    run_dir = _allocate_run_dir(output_dir, scenario_file.stem, started, batch=batch)
     # Snapshot the resolved config so re-runs do not pick up later changes to defaults.toml.
     (run_dir / CONFIG_NAME).write_text(config.to_toml())
     ctx = RunContext(
@@ -124,6 +120,30 @@ def create_run(
         }
     )
     return ctx
+
+
+def _allocate_run_dir(
+    output_dir: Path, scenario_name: str, started: datetime, *, batch: bool
+) -> Path:
+    """Create a new run folder. Batch mode uses YYYYMMDD-HHMM-NNNN-scenario and retries on clash."""
+    if not batch:
+        run_dir = output_dir / paths.run_dir_name(scenario_name, started)
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            raise RunStateError(f"Run folder already exists: {run_dir}") from None
+        return run_dir
+
+    for sequence in range(1, 10_000):
+        run_dir = output_dir / paths.run_dir_name(scenario_name, started, sequence)
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            continue
+        return run_dir
+    raise RunStateError(
+        f"No free batch run folder for {paths.run_dir_name(scenario_name, started, 1)} … 9999"
+    )
 
 
 def open_run(run_dir: Path) -> RunContext:
