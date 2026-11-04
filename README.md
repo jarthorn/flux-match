@@ -15,6 +15,7 @@ uv run flux-match select [--scenario NAME | --run DIR]
 uv run flux-match preprocess --run output/<run>      # overwrites this step's outputs in place
 uv run flux-match dispatch --run output/<run>
 bin/viz output/<run>                                 # step 5: Streamlit dashboard
+bin/cf-anim --type wind|solar                        # hourly capacity-factor map animation
 bin/test                                             # lint and unit tests
 bin/format                                           # ruff fix and format
 ```
