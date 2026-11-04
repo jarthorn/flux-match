@@ -40,6 +40,17 @@ class RunContextTest(unittest.TestCase):
         with self.assertRaises(RunStateError):
             create_run(self.scenario, self.output, STARTED)
 
+    def test_batch_run_folder_includes_sequence_and_skips_existing(self):
+        first = create_run(self.scenario, self.output, STARTED, batch=True)
+        self.assertEqual(first.run_dir, self.output / "20261027-0905-0001-greedy")
+        # A non-batch folder or a hole in the sequence must not block later batch runs.
+        (self.output / "20261027-0905-greedy").mkdir()
+        (self.output / "20261027-0905-0003-greedy").mkdir()
+        second = create_run(self.scenario, self.output, STARTED, batch=True)
+        self.assertEqual(second.run_dir, self.output / "20261027-0905-0002-greedy")
+        third = create_run(self.scenario, self.output, STARTED, batch=True)
+        self.assertEqual(third.run_dir, self.output / "20261027-0905-0004-greedy")
+
     def test_invalid_scenario_creates_no_run_folder(self):
         self.scenario.write_text("not = [valid")
         with self.assertRaises(ConfigError):

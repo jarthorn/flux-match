@@ -37,5 +37,8 @@ def scenario_path(name_or_path: str) -> Path:
     return SCENARIOS_DIR / f"{name_or_path}.toml"
 
 
-def run_dir_name(scenario_name: str, started: datetime) -> str:
-    return f"{started.strftime(TIMESTAMP_FORMAT)}-{scenario_name}"
+def run_dir_name(scenario_name: str, started: datetime, sequence: int | None = None) -> str:
+    stamp = started.strftime(TIMESTAMP_FORMAT)
+    if sequence is None:
+        return f"{stamp}-{scenario_name}"
+    return f"{stamp}-{sequence:04d}-{scenario_name}"
