@@ -1,0 +1,18 @@
+#!/bin/bash
+# Run the balanced scenario in batch mode over a grid of capacity ratios.
+# Overrides selection.solar_capacity_ratio and selection.wind_capacity_ratio
+# for every integer pair in 0..MAX (default MAX=9 → 100 runs).
+#
+# Usage: bin/run-batch [MAX]
+set -euo pipefail
+
+MAX="${1:-9}"
+
+for solar in $(seq 0 "$MAX"); do
+  for wind in $(seq 0 "$MAX"); do
+    echo "=== solar_capacity_ratio=$solar wind_capacity_ratio=$wind ==="
+    bin/run --batch --scenario balanced \
+      --config "selection.solar_capacity_ratio=$solar" \
+      --config "selection.wind_capacity_ratio=$wind"
+  done
+done
