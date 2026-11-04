@@ -1,12 +1,57 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError
 
 SOURCE = Path("test.toml")
+
+# Fixed fixtures for inheritance tests so they do not depend on scenarios/*.toml content.
+FIXED_DEFAULTS = """\
+[fetch]
+provinces = ["ON", "QC"]
+demand_years = [2020, 2021]
+capacity_factor_years = [2021]
+
+[selection]
+solar_capacity_ratio = 2.5
+wind_capacity_ratio = 2.5
+max_wind_capacity_mw_per_cell = 5000
+max_solar_capacity_mw_per_cell = 5000
+
+[selection.greedy]
+ranking_metric = "annual_capacity"
+
+[dispatch]
+dispatch_years = [2021]
+bess_initial_soc = 0.0
+bess_rte = 0.88
+bess_capacity_ratio = 0.5
+bess_duration = 4
+"""
+
+BALANCED_SCENARIO = """\
+[selection]
+strategy = "greedy"
+"""
+
+HIGHWIND_SCENARIO = """\
+[selection]
+strategy = "greedy"
+solar_capacity_ratio = 1.0
+wind_capacity_ratio = 4.0
+"""
+
+TVCI_SCENARIO = """\
+[selection]
+strategy = "tvci"
+
+[selection.tvci]
+candidate_multiple = 2.0
+"""
 
 
 def config(data: dict) -> Config:
@@ -55,8 +100,24 @@ class ConfigTest(unittest.TestCase):
 
 
 class ConfigInheritanceTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.scenarios = Path(tmp.name)
+        self.defaults = self.scenarios / "defaults.toml"
+        self.defaults.write_text(FIXED_DEFAULTS)
+        self.balanced = self.scenarios / "balanced.toml"
+        self.balanced.write_text(BALANCED_SCENARIO)
+        self.highwind = self.scenarios / "highwind.toml"
+        self.highwind.write_text(HIGHWIND_SCENARIO)
+        self.tvci = self.scenarios / "tvci.toml"
+        self.tvci.write_text(TVCI_SCENARIO)
+        patcher = mock.patch.object(paths, "defaults_path", return_value=self.defaults)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_scenario_inherits_undefined_keys_from_defaults(self):
-        balanced = Config.load(paths.SCENARIOS_DIR / "balanced.toml")
+        balanced = Config.load(self.balanced)
         self.assertEqual(balanced.section("selection").get("strategy", str), "greedy")
         self.assertEqual(balanced.section("selection").get("solar_capacity_ratio", float), 2.5)
         self.assertEqual(
@@ -67,7 +128,7 @@ class ConfigInheritanceTest(unittest.TestCase):
         self.assertEqual(balanced.section("fetch").get_list("capacity_factor_years", int), [2021])
 
     def test_scenario_overrides_replace_defaults(self):
-        highwind = Config.load(paths.SCENARIOS_DIR / "highwind.toml")
+        highwind = Config.load(self.highwind)
         self.assertEqual(highwind.section("selection").get("solar_capacity_ratio", float), 1.0)
         self.assertEqual(highwind.section("selection").get("wind_capacity_ratio", float), 4.0)
         # Unrelated selection keys still come from defaults.
@@ -76,24 +137,22 @@ class ConfigInheritanceTest(unittest.TestCase):
         )
 
     def test_defaults_file_does_not_define_strategy(self):
-        defaults = Config.load(paths.defaults_path())
+        defaults = Config.load(self.defaults)
         with self.assertRaisesRegex(ConfigError, "missing required key 'selection.strategy'"):
             defaults.section("selection").get("strategy", str)
 
     def test_inherit_defaults_false_skips_merge(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "partial.toml"
-            path.write_text('[selection]\nstrategy = "greedy"\n')
-            config = Config.load(path, inherit_defaults=False)
-            with self.assertRaisesRegex(ConfigError, "missing required key 'fetch'"):
-                config.section("fetch")
+        path = self.scenarios / "partial.toml"
+        path.write_text('[selection]\nstrategy = "greedy"\n')
+        config = Config.load(path, inherit_defaults=False)
+        with self.assertRaisesRegex(ConfigError, "missing required key 'fetch'"):
+            config.section("fetch")
 
     def test_to_toml_round_trips_through_load(self):
-        original = Config.load(paths.SCENARIOS_DIR / "tvci.toml")
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "config.toml"
-            path.write_text(original.to_toml())
-            reloaded = Config.load(path, inherit_defaults=False)
+        original = Config.load(self.tvci)
+        path = self.scenarios / "config.toml"
+        path.write_text(original.to_toml())
+        reloaded = Config.load(path, inherit_defaults=False)
         self.assertEqual(
             reloaded.section("selection").get("strategy", str),
             original.section("selection").get("strategy", str),
