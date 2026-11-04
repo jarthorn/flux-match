@@ -361,6 +361,21 @@ class DispatchRunTest(TempDirTest):
             },
         )
 
+    def test_batch_mode_writes_no_hourly_file_but_same_stats(self) -> None:
+        self._run()
+        expected = self.ctx.read_stats("dispatch")
+        batch_ctx = create_run(
+            self.dir / "test.toml",
+            self.dir / "output",
+            datetime(2026, 10, 27, 20, 1),
+            batch=True,
+        )
+        batch_ctx.vre_hourly_path.write_text(self.ctx.vre_hourly_path.read_text())
+        with redirect_stdout(StringIO()):
+            run(batch_ctx, data_dir=self.data_dir, hours_in_year=HOURS)
+        self.assertEqual(sorted(p.name for p in batch_ctx.run_dir.glob("dispatch*")), [])
+        self.assertEqual(batch_ctx.read_stats("dispatch"), expected)
+
     def test_missing_hourly_demand_year_fails_with_hint(self) -> None:
         (self.data_dir / paths.ba_demand_hourly_filename(2024)).unlink()
         with self.assertRaisesRegex(DataError, "Add 2024 to fetch.demand_years"):

@@ -22,6 +22,8 @@ discharge and negative for charge, and net demand = demand - variable generation
 Output values are rounded to whole MW, the precision of the CODERS demand data. The battery is
 simulated at full precision, so the rounded columns of a row may not add up exactly.
 
+In batch mode (ctx.batch) the dispatch still runs, but no dispatch_hourly_<year>.csv is written.
+
 Also records per-balancing-area statistics over all dispatch years in run.json under
 "dispatch_stats", computed at full precision:
     net_demand_pct              shortfall hours' net demand, as a percentage of total demand
@@ -36,7 +38,7 @@ all balancing-area-hours.
 
 import itertools
 import math
-from collections import defaultdict
+from collections import defaultdict, deque
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,11 +149,17 @@ def run(
                 f"Hourly demand for {year} not found: {demand_path}. "
                 f"Add {year} to fetch.demand_years and run fetch."
             )
-        dest = ctx.dispatch_hourly_path(year)
-        print(f"writing {dest.name}", flush=True)
         hours = paired_hours(demand_path, ctx.vre_hourly_path, hours_in_year=hours_in_year)
         rows = dispatch_rows(year, hours, batteries, params, totals=totals)
-        write_csv_atomic(dest, DISPATCH_COLUMNS, rows)
+        if ctx.batch:
+            # Only the statistics are wanted: run the dispatch (and its input validation)
+            # without writing the hourly file.
+            print(f"dispatching {year}", flush=True)
+            deque(rows, maxlen=0)
+        else:
+            dest = ctx.dispatch_hourly_path(year)
+            print(f"writing {dest.name}", flush=True)
+            write_csv_atomic(dest, DISPATCH_COLUMNS, rows)
     ctx.record_stats("dispatch", dispatch_stats(totals))
 
 

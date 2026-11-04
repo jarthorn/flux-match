@@ -29,18 +29,23 @@ def _run_step(ctx: RunContext, step: str) -> None:
     ctx.complete_step(step)
 
 
-def _new_run(scenario: str) -> RunContext:
-    ctx = create_run(paths.scenario_path(scenario))
+def _new_run(scenario: str, *, batch: bool = False) -> RunContext:
+    ctx = create_run(paths.scenario_path(scenario), batch=batch)
     print(f"Created run folder {ctx.run_dir}")
     return ctx
 
 
 def _cmd_all(args: argparse.Namespace) -> None:
-    ctx = _new_run(args.scenario)
-    print("[fetch]")
-    fetch.run(ctx.config)
-    for step in RUN_STEPS:
-        _run_step(ctx, step)
+    ctx = _new_run(args.scenario, batch=args.batch)
+    try:
+        print("[fetch]")
+        fetch.run(ctx.config)
+        for step in RUN_STEPS:
+            _run_step(ctx, step)
+    finally:
+        # Also on failure, so that a batch run folder never holds more than the three results.
+        if ctx.batch:
+            ctx.remove_intermediate_files()
 
 
 def _cmd_fetch(args: argparse.Namespace) -> None:
@@ -73,6 +78,11 @@ def _parser() -> argparse.ArgumentParser:
 
     p = commands.add_parser("all", help="run steps 1-4 in a new run folder")
     add_scenario(p)
+    p.add_argument(
+        "--batch",
+        action="store_true",
+        help="keep only config.toml, run.json and selected_sites.csv in the run folder",
+    )
     p.set_defaults(handler=_cmd_all)
 
     p = commands.add_parser("fetch", help="step 1: download CODERS data into data/coders/")

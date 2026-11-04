@@ -76,6 +76,18 @@ class RunContextTest(unittest.TestCase):
         self.assertIsNone(ctx.read_stats("preprocess"))
         self.assertIsNone(ctx.read_stats("dispatch"))
 
+    def test_remove_intermediate_files_deletes_vre_file_only(self):
+        ctx = create_run(self.scenario, self.output, STARTED, batch=True)
+        self.assertTrue(ctx.batch)
+        ctx.vre_hourly_path.write_text("x")
+        ctx.selected_sites_path.write_text("y")
+        ctx.remove_intermediate_files()
+        ctx.remove_intermediate_files()  # already gone: not an error
+        self.assertEqual(
+            sorted(p.name for p in ctx.run_dir.iterdir()),
+            ["config.toml", "run.json", "selected_sites.csv"],
+        )
+
     def test_open_run_rejects_non_run_folder(self):
         with self.assertRaises(RunStateError):
             open_run(self.root)
