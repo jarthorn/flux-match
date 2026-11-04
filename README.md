@@ -10,6 +10,7 @@ Each run is configured by a scenario file, `scenarios/<name>.toml`. Shared param
 
 ```bash
 bin/run [--scenario NAME]                            # steps 1-4 in a new run folder (default scenario: "balanced")
+bin/run --batch [--scenario NAME]                    # as above, but keep only config.toml, run.json and selected_sites.csv
 uv run flux-match fetch [--scenario NAME]            # step 1 only, into data/coders/
 uv run flux-match select [--scenario NAME | --run DIR]
 uv run flux-match preprocess --run output/<run>      # overwrites this step's outputs in place
@@ -19,6 +20,8 @@ bin/cf-anim --type wind|solar                        # hourly capacity-factor ma
 bin/test                                             # lint and unit tests
 bin/format                                           # ruff fix and format
 ```
+
+Batch mode (`--batch`, `all` only) is for large numbers of runs where only the site selection and `dispatch_stats` matter. Those three files have the same contents as in a normal run; `clusters.csv` and `dispatch_hourly_<year>.csv` are never written (dispatch still runs, to compute the stats), and `vre_by_ba_hourly.csv` is deleted when the run ends, including on failure. `bin/viz` cannot display a batch run, and individual steps cannot be re-run on it, since the hourly inputs are gone.
 
 When a step is re-run on an existing folder, it reads that folder's `config.toml`, not `scenarios/`, and later steps are marked incomplete until they are re-run.
 

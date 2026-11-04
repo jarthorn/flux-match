@@ -20,8 +20,16 @@ RUN_STEPS = ("select", "preprocess", "dispatch")
 
 @dataclass(frozen=True)
 class RunContext:
+    """A run folder and its config.
+
+    In batch mode, a run leaves only config.toml, run.json and selected_sites.csv: steps skip
+    optional outputs (clusters.csv, dispatch_hourly_<year>.csv), and the intermediate
+    vre_by_ba_hourly.csv is removed by `remove_intermediate_files` once the run is over.
+    """
+
     run_dir: Path
     config: Config
+    batch: bool = False
 
     @property
     def selected_sites_path(self) -> Path:
@@ -37,6 +45,10 @@ class RunContext:
 
     def dispatch_hourly_path(self, year: int) -> Path:
         return self.run_dir / f"dispatch_hourly_{year}.csv"
+
+    def remove_intermediate_files(self) -> None:
+        """Delete files that later steps need but that are not results (batch mode cleanup)."""
+        self.vre_hourly_path.unlink(missing_ok=True)
 
     def require_complete(self, step: str) -> None:
         if step not in self._read_manifest()["completed_steps"]:
@@ -84,7 +96,11 @@ def _stats_key(step: str) -> str:
 
 
 def create_run(
-    scenario_file: Path, output_dir: Path = paths.OUTPUT_DIR, started: datetime | None = None
+    scenario_file: Path,
+    output_dir: Path = paths.OUTPUT_DIR,
+    started: datetime | None = None,
+    *,
+    batch: bool = False,
 ) -> RunContext:
     # Resolve defaults + scenario before creating the folder so a bad file leaves no residue.
     config = Config.load(scenario_file)
@@ -96,7 +112,9 @@ def create_run(
         raise RunStateError(f"Run folder already exists: {run_dir}") from None
     # Snapshot the resolved config so re-runs do not pick up later changes to defaults.toml.
     (run_dir / CONFIG_NAME).write_text(config.to_toml())
-    ctx = RunContext(run_dir, Config.load(run_dir / CONFIG_NAME, inherit_defaults=False))
+    ctx = RunContext(
+        run_dir, Config.load(run_dir / CONFIG_NAME, inherit_defaults=False), batch=batch
+    )
     ctx._write_manifest(
         {
             "scenario": scenario_file.stem,

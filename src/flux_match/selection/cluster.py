@@ -8,7 +8,7 @@ in that order as described in base.py, so a balancing area that needs only one s
 same site as the greedy strategy. Wind and solar share the clusters.
 
 The clusters are written to clusters.csv in the run folder, one row per grid cell, with
-cluster_id 1..K within each balancing area.
+cluster_id 1..K within each balancing area. Batch runs do not write it.
 
 Parameters, in [selection.cluster]: `cluster_count` (K), and `seed` and `n_init` for K-means,
 so that runs are reproducible.
@@ -62,7 +62,7 @@ class ClusterStrategy(Strategy):
             demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
             rankings_path=paths.DATA_DIR / paths.RANKINGS_FILENAME,
             grid_cell_info=paths.CODERS_DATA_DIR / GRID_CELL_INFO,
-            clusters_path=ctx.clusters_path,
+            clusters_path=None if ctx.batch else ctx.clusters_path,
             capacity=self.capacity,
             kmeans=self.kmeans,
         )
@@ -73,7 +73,7 @@ def select_sites(
     demand_path: Path,
     rankings_path: Path,
     grid_cell_info: Path,
-    clusters_path: Path,
+    clusters_path: Path | None,
     capacity: CapacityParams,
     kmeans: GeoKMeans,
 ) -> list[Site]:
@@ -83,7 +83,8 @@ def select_sites(
         points = [GeoPoint(c.grid_cell, c.latitude, c.longitude) for c in cells]
         for cluster_id, members in enumerate(kmeans.cluster(points, ba), start=1):
             cluster_of.update(dict.fromkeys(members, cluster_id))
-    write_clusters(clusters_path, cells_by_ba, cluster_of)
+    if clusters_path is not None:
+        write_clusters(clusters_path, cells_by_ba, cluster_of)
     return select_per_balancing_area(
         demand_path,
         cells_by_ba,
