@@ -21,13 +21,13 @@ from flux_match.viz.charts import (
     Zoom,
     aggregate_panels,
     build_figure,
-    default_authority,
+    default_balancing_area,
     load_dashboard_tables,
     panels_for,
 )
 
 # Fits the longest label ("Newfoundland and Labrador.b") without spanning the chart.
-AUTHORITY_SELECT_WIDTH = 340
+BALANCING_AREA_SELECT_WIDTH = 340
 
 SERIES_DESCRIPTIONS = {
     Resolution.HOURLY: "Hourly",
@@ -68,7 +68,7 @@ def main() -> None:
 
     st.title(f"Flux Match: {ctx.run_dir.name}")
 
-    year_col, authority_col, resolution_col, zoom_col = st.columns([1, 2, 1.5, 1.5])
+    year_col, balancing_area_col, resolution_col, zoom_col = st.columns([1, 2, 1.5, 1.5])
     with year_col:
         year = st.selectbox("Year", years, index=years.index(max(years)))
     try:
@@ -77,13 +77,13 @@ def main() -> None:
         st.error(str(e))
         st.stop()
 
-    authorities = list(demand.authorities)
-    with authority_col:
-        authority = st.selectbox(
+    balancing_areas = list(demand.balancing_areas)
+    with balancing_area_col:
+        balancing_area = st.selectbox(
             "Balancing area",
-            authorities,
-            index=authorities.index(default_authority(authorities)),
-            width=AUTHORITY_SELECT_WIDTH,
+            balancing_areas,
+            index=balancing_areas.index(default_balancing_area(balancing_areas)),
+            width=BALANCING_AREA_SELECT_WIDTH,
         )
     with resolution_col:
         resolution = Resolution(
@@ -110,20 +110,20 @@ def main() -> None:
 
     try:
         display_times, panels = aggregate_panels(
-            demand.hours, year, panels_for(authority, demand, vre, dispatch), resolution
+            demand.hours, year, panels_for(balancing_area, demand, vre, dispatch), resolution
         )
     except FluxMatchError as e:
         st.error(str(e))
         st.stop()
 
     st.plotly_chart(
-        build_figure(authority, year, display_times, panels, resolution, zoom),
+        build_figure(balancing_area, year, display_times, panels, resolution, zoom),
         width="stretch",
         config={"scrollZoom": False, "displaylogo": False},
     )
     st.caption(
-        f"{SERIES_DESCRIPTIONS[resolution]} wind and solar generation for {authority} from the "
-        "sites selected in this run, using the single capacity-factor year in the scenario. "
+        f"{SERIES_DESCRIPTIONS[resolution]} wind and solar generation for {balancing_area} from "
+        "the sites selected in this run, using the single capacity-factor year in the scenario. "
         "Battery output is positive when discharging and negative when charging. "
         "Net demand is demand minus wind, solar, and battery output."
     )
