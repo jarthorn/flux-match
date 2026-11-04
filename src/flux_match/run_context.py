@@ -101,9 +101,10 @@ def create_run(
     started: datetime | None = None,
     *,
     batch: bool = False,
+    overrides: dict[str, Any] | None = None,
 ) -> RunContext:
-    # Resolve defaults + scenario before creating the folder so a bad file leaves no residue.
-    config = Config.load(scenario_file)
+    # Resolve the config before creating the folder so a bad file or override leaves no residue.
+    config = Config.load(scenario_file, overrides=overrides)
     started = started or datetime.now()
     run_dir = _allocate_run_dir(output_dir, scenario_file.stem, started, batch=batch)
     # Snapshot the resolved config so re-runs do not pick up later changes to defaults.toml.
@@ -114,6 +115,7 @@ def create_run(
     ctx._write_manifest(
         {
             "scenario": scenario_file.stem,
+            "config_overrides": overrides or {},
             "started": started.isoformat(timespec="seconds"),
             "git": _git_info(),
             "completed_steps": [],

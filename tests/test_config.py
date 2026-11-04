@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from flux_match import paths
-from flux_match.config import Config
+from flux_match.config import Config, parse_override
 from flux_match.errors import ConfigError
 
 SOURCE = Path("test.toml")
@@ -99,6 +99,32 @@ class ConfigTest(unittest.TestCase):
             config({"dispatch": 1}).section("dispatch")
 
 
+class ParseOverrideTest(unittest.TestCase):
+    def test_values_are_toml_literals(self):
+        cases = {
+            "dispatch.bess_rte=0.9": ("dispatch.bess_rte", 0.9),
+            "a.b=4": ("a.b", 4),
+            "a=true": ("a", True),
+            "a=[2023, 2024]": ("a", [2023, 2024]),
+            'a="x=y"': ("a", "x=y"),
+            " a = 1 ": ("a", 1),
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(parse_override(text), expected)
+
+    def test_non_toml_value_is_a_bare_string(self):
+        self.assertEqual(
+            parse_override("selection.strategy=cluster"), ("selection.strategy", "cluster")
+        )
+        self.assertEqual(parse_override("a=x=y"), ("a", "x=y"))
+
+    def test_malformed_overrides_rejected(self):
+        for text in ("a", "a=", "=1", "a..b=1", "a.=1", "a={ b = 1 }", "a=2024-01-01"):
+            with self.subTest(text=text), self.assertRaises(ConfigError):
+                parse_override(text)
+
+
 class ConfigInheritanceTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -147,6 +173,30 @@ class ConfigInheritanceTest(unittest.TestCase):
         config = Config.load(path, inherit_defaults=False)
         with self.assertRaisesRegex(ConfigError, "missing required key 'fetch'"):
             config.section("fetch")
+
+    def test_overrides_take_precedence_over_scenario_and_defaults(self):
+        highwind = Config.load(
+            self.highwind,
+            overrides={"selection.wind_capacity_ratio": 3.0, "dispatch.bess_rte": 0.9},
+        )
+        # Scenario value overridden, default value overridden, other keys untouched.
+        self.assertEqual(highwind.section("selection").get("wind_capacity_ratio", float), 3.0)
+        self.assertEqual(highwind.section("dispatch").get("bess_rte", float), 0.9)
+        self.assertEqual(highwind.section("selection").get("solar_capacity_ratio", float), 1.0)
+
+    def test_override_of_nested_key_and_snapshot_holds_overridden_value(self):
+        tvci = Config.load(self.tvci, overrides={"selection.tvci.candidate_multiple": 3})
+        path = self.scenarios / "config.toml"
+        path.write_text(tvci.to_toml())
+        reloaded = Config.load(path, inherit_defaults=False)
+        self.assertEqual(
+            reloaded.section("selection").section("tvci").get("candidate_multiple", float), 3.0
+        )
+
+    def test_override_of_unknown_key_or_table_fails(self):
+        for key in ("dispatch.bess_rtee", "dispatchh.bess_rte", "dispatch.bess_rte.x", "dispatch"):
+            with self.subTest(key=key), self.assertRaisesRegex(ConfigError, "override"):
+                Config.load(self.balanced, overrides={key: 1})
 
     def test_to_toml_round_trips_through_load(self):
         original = Config.load(self.tvci)
