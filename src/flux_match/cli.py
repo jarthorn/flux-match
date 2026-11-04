@@ -4,10 +4,11 @@ import argparse
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from flux_match import paths, selection
-from flux_match.config import Config
-from flux_match.errors import FluxMatchError
+from flux_match.config import Config, parse_override
+from flux_match.errors import ConfigError, FluxMatchError
 from flux_match.run_context import RUN_STEPS, RunContext, create_run, open_run
 from flux_match.steps import dispatch, fetch, preprocess
 
@@ -29,14 +30,30 @@ def _run_step(ctx: RunContext, step: str) -> None:
     ctx.complete_step(step)
 
 
-def _new_run(scenario: str, *, batch: bool = False) -> RunContext:
-    ctx = create_run(paths.scenario_path(scenario), batch=batch)
+def _new_run(args: argparse.Namespace, *, batch: bool = False) -> RunContext:
+    ctx = create_run(paths.scenario_path(args.scenario), batch=batch, overrides=_overrides(args))
     print(f"Created run folder {ctx.run_dir}")
     return ctx
 
 
+def _override_arg(text: str) -> tuple[str, Any]:
+    try:
+        return parse_override(text)
+    except ConfigError as e:
+        raise argparse.ArgumentTypeError(str(e)) from None
+
+
+def _overrides(args: argparse.Namespace) -> dict[str, Any]:
+    overrides: dict[str, Any] = {}
+    for key, value in args.config:
+        if key in overrides:
+            raise ConfigError(f"Config override '{key}' is given more than once")
+        overrides[key] = value
+    return overrides
+
+
 def _cmd_all(args: argparse.Namespace) -> None:
-    ctx = _new_run(args.scenario, batch=args.batch)
+    ctx = _new_run(args, batch=args.batch)
     try:
         print("[fetch]")
         fetch.run(ctx.config)
@@ -49,11 +66,13 @@ def _cmd_all(args: argparse.Namespace) -> None:
 
 
 def _cmd_fetch(args: argparse.Namespace) -> None:
-    fetch.run(Config.load(paths.scenario_path(args.scenario)))
+    fetch.run(Config.load(paths.scenario_path(args.scenario), overrides=_overrides(args)))
 
 
 def _cmd_step(args: argparse.Namespace) -> None:
-    ctx = open_run(args.run) if args.run else _new_run(args.scenario)
+    if args.run and getattr(args, "config", None):
+        raise ConfigError("--config cannot be used with --run, which uses the run's config.toml")
+    ctx = open_run(args.run) if args.run else _new_run(args)
     _run_step(ctx, args.command)
 
 
@@ -68,6 +87,18 @@ def _parser() -> argparse.ArgumentParser:
             help="scenario name in scenarios/, or a path to a .toml file (default: %(default)s)",
         )
 
+    def add_config(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--config",
+            type=_override_arg,
+            nargs="+",
+            action="extend",
+            default=[],
+            metavar="KEY=VALUE",
+            help="override a config value from the scenario or defaults.toml, e.g. "
+            "dispatch.bess_rte=0.9 or 'fetch.demand_years=[2023, 2024]'; may be repeated",
+        )
+
     def add_run(p: argparse.ArgumentParser, required: bool) -> None:
         p.add_argument(
             "--run",
@@ -78,6 +109,7 @@ def _parser() -> argparse.ArgumentParser:
 
     p = commands.add_parser("all", help="run steps 1-4 in a new run folder")
     add_scenario(p)
+    add_config(p)
     p.add_argument(
         "--batch",
         action="store_true",
@@ -87,12 +119,14 @@ def _parser() -> argparse.ArgumentParser:
 
     p = commands.add_parser("fetch", help="step 1: download CODERS data into data/coders/")
     add_scenario(p)
+    add_config(p)
     p.set_defaults(handler=_cmd_fetch)
 
     p = commands.add_parser("select", help="step 2: select sites (new run folder unless --run)")
     group = p.add_mutually_exclusive_group()
     add_scenario(group)
     add_run(group, required=False)
+    add_config(p)
     p.set_defaults(handler=_cmd_step)
 
     for step, help_text in [

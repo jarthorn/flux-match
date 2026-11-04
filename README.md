@@ -9,10 +9,10 @@ Flux Match is a simple dispatch model that simulates dispatching variable genera
 Each run is configured by a scenario file, `scenarios/<name>.toml`. Shared parameters live in `scenarios/defaults.toml`; a scenario only needs to set what it overrides (including `selection.strategy`). Steps 2-4 write to a new run folder, `output/<YYYYMMDD-HHMM>-<scenario>/`, which also holds a `config.toml` snapshot of the resolved defaults+scenario merge and a `run.json` manifest (git commit, completed steps, and per-balancing-area `dispatch_stats` for comparing site selection strategies).
 
 ```bash
-bin/run [--scenario NAME]                            # steps 1-4 in a new run folder (default scenario: "balanced")
-bin/run --batch [--scenario NAME]                    # as above, but keep only config.toml, run.json and selected_sites.csv
-uv run flux-match fetch [--scenario NAME]            # step 1 only, into data/coders/
-uv run flux-match select [--scenario NAME | --run DIR]
+bin/run [--scenario NAME] [--config KEY=VALUE ...]   # steps 1-4 in a new run folder (default scenario: "balanced")
+bin/run --batch [--scenario NAME] [--config ...]     # as above, but keep only config.toml, run.json and selected_sites.csv
+uv run flux-match fetch [--scenario NAME] [--config ...]  # step 1 only, into data/coders/
+uv run flux-match select [--scenario NAME [--config ...] | --run DIR]
 uv run flux-match preprocess --run output/<run>      # overwrites this step's outputs in place
 uv run flux-match dispatch --run output/<run>
 bin/viz output/<run>                                 # step 5: Streamlit dashboard
@@ -21,9 +21,19 @@ bin/test                                             # lint and unit tests
 bin/format                                           # ruff fix and format
 ```
 
+## Batch Mode
+
 Batch mode (`--batch`, `all` only) is for large numbers of runs where only the site selection and `dispatch_stats` matter. Those three files have the same contents as in a normal run; `clusters.csv` and `dispatch_hourly_<year>.csv` are never written (dispatch still runs, to compute the stats), and `vre_by_ba_hourly.csv` is deleted when the run ends, including on failure. `bin/viz` cannot display a batch run, and individual steps cannot be re-run on it, since the hourly inputs are gone.
 
 When a step is re-run on an existing folder, it reads that folder's `config.toml`, not `scenarios/`, and later steps are marked incomplete until they are re-run.
+
+When running in batch mode, it is helpful to be able to override specific config values in order to test a possibility space of values. `--config` overrides individual values for a new run, taking precedence over the scenario file and `defaults.toml`. Each override is a dotted key and a TOML value; a value that is not valid TOML is taken as a plain string. Several overrides can follow one `--config`, or the option can be repeated:
+
+```bash
+bin/run --batch --config 'dispatch.dispatch_years=[2023, 2024]' --config selection.greedy.ranking_metric=median_daily_capacity
+```
+
+The key must already exist in the resolved scenario and defaults, so a typo fails instead of being ignored; switching to a strategy whose table the scenario lacks needs a scenario file. The run's `config.toml` holds the overridden values, and `run.json` lists the overrides under `config_overrides`. `--config` cannot be combined with `--run`.
 
 ## Layout
 

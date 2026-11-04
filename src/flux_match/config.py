@@ -1,11 +1,13 @@
 """Typed access to scenario TOML files.
 
-Scenario files inherit undefined keys from scenarios/defaults.toml. Lookups are still
+Scenario files inherit undefined keys from scenarios/defaults.toml, and command-line
+overrides (`--config dotted.key=value`) take precedence over both. Lookups are still
 required with no defaults in code, so each value used by a run is visible in its
-config.toml snapshot (the resolved merge of defaults and the scenario).
+config.toml snapshot (the resolved merge of defaults, the scenario and the overrides).
 """
 
 import tomllib
+from datetime import date, time
 from pathlib import Path
 from typing import Any, Self
 
@@ -22,10 +24,20 @@ class Config:
         self._prefix = prefix
 
     @classmethod
-    def load(cls, path: Path, *, inherit_defaults: bool = True) -> Self:
+    def load(
+        cls,
+        path: Path,
+        *,
+        inherit_defaults: bool = True,
+        overrides: dict[str, Any] | None = None,
+    ) -> Self:
+        """`overrides` maps dotted keys (from `parse_override`) to values; each key must
+        already exist in the merged file(s), so that a typo cannot be silently ignored."""
         data = _read_toml(path)
         if inherit_defaults and path.resolve() != paths.defaults_path().resolve():
             data = _deep_merge(_read_toml(paths.defaults_path()), data)
+        for key, value in (overrides or {}).items():
+            _set_existing(data, key, value, path)
         return cls(data, path)
 
     def to_toml(self) -> str:
@@ -84,6 +96,41 @@ def _read_toml(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: root must be a table")
     return data
+
+
+def parse_override(text: str) -> tuple[str, Any]:
+    """Parse `dotted.key=value`. The value is a TOML literal (`0.9`, `true`, `[2022, 2023]`,
+    `"text"`); anything that is not valid TOML is taken as a bare string (`cluster`)."""
+    key, sep, raw = text.partition("=")
+    key, raw = key.strip(), raw.strip()
+    if not sep or not raw or not all(part.strip() for part in key.split(".")):
+        raise ConfigError(f"Config override must be 'dotted.key=value', got {text!r}")
+    try:
+        value = tomllib.loads(f"v = {raw}")["v"]
+    except tomllib.TOMLDecodeError:
+        value = raw
+    if isinstance(value, dict):
+        raise ConfigError(f"Config override '{key}' must set a single value, not a table")
+    if isinstance(value, (date, time)):
+        raise ConfigError(f"Config override '{key}': dates and times are not supported")
+    return key, value
+
+
+def _set_existing(data: dict[str, Any], dotted_key: str, value: Any, source: Path) -> None:
+    *parents, leaf = dotted_key.split(".")
+    table = data
+    for depth, part in enumerate(parents):
+        table = table.get(part)
+        if not isinstance(table, dict):
+            prefix = ".".join(parents[: depth + 1])
+            raise ConfigError(
+                f"Config override '{dotted_key}': no table '{prefix}' in the config for {source}"
+            )
+    if leaf not in table:
+        raise ConfigError(f"Config override '{dotted_key}': no such key in the config for {source}")
+    if isinstance(table[leaf], dict):
+        raise ConfigError(f"Config override '{dotted_key}' is a table, not a single value")
+    table[leaf] = value
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:

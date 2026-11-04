@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import datetime
@@ -7,6 +8,7 @@ from flux_match.config import Config
 from flux_match.errors import ConfigError, RunStateError
 from flux_match.run_context import (
     CONFIG_NAME,
+    MANIFEST_NAME,
     create_run,
     latest_run_dir,
     open_run,
@@ -34,6 +36,20 @@ class RunContextTest(unittest.TestCase):
         )
         self.assertEqual(ctx.config.section("selection").get("strategy", str), "greedy")
         self.assertIn("AB", ctx.config.section("fetch").get_list("provinces", str))
+
+    def test_overrides_are_in_config_snapshot_and_manifest(self):
+        overrides = {"dispatch.bess_rte": 0.75, "fetch.provinces": ["ON"]}
+        ctx = create_run(self.scenario, self.output, STARTED, overrides=overrides)
+        snapshot = Config.load(ctx.run_dir / CONFIG_NAME, inherit_defaults=False)
+        self.assertEqual(snapshot.section("dispatch").get("bess_rte", float), 0.75)
+        self.assertEqual(snapshot.section("fetch").get_list("provinces", str), ["ON"])
+        manifest = json.loads((ctx.run_dir / MANIFEST_NAME).read_text())
+        self.assertEqual(manifest["config_overrides"], overrides)
+
+    def test_invalid_override_creates_no_run_folder(self):
+        with self.assertRaises(ConfigError):
+            create_run(self.scenario, self.output, STARTED, overrides={"dispatch.nope": 1})
+        self.assertFalse(self.output.exists())
 
     def test_existing_run_folder_is_never_reused(self):
         create_run(self.scenario, self.output, STARTED)
