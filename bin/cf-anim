@@ -1,0 +1,3 @@
+#!/bin/bash
+
+uv run --group viz python -m flux_match.viz.cf_animation "$@"

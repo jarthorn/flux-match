@@ -276,7 +276,7 @@ def read_cells_by_ba(
     """
     cells, areas = read_grid_cells(grid_cell_info)
     cell_to_ba = dict(zip(cells, areas, strict=True))
-    locations = _read_locations(grid_cell_info)
+    locations = read_locations(grid_cell_info)
     ranking_rows = read_csv(rankings_path, RANKINGS_COLUMNS)
     ranking_cells = [row["grid_cell"].strip() for row in ranking_rows]
     if set(ranking_cells) != set(cells):
@@ -316,7 +316,7 @@ def read_cells_by_ba(
     return cells_by_ba
 
 
-def _read_locations(path: Path) -> dict[str, tuple[float, float]]:
+def read_locations(path: Path) -> dict[str, tuple[float, float]]:
     """(latitude, longitude) of each grid cell in grid_cell_info.csv."""
     locations = {}
     for row in read_csv(path, ("grid_cell", "latitude", "longitude")):
