@@ -211,6 +211,9 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Mac OS
+.DS_Store
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
