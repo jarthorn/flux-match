@@ -3,13 +3,14 @@
     uv run --group viz python -m flux_match.viz.cf_animation --type wind|solar [--year Y]
 
 Each grid cell is drawn as a rectangle on a Plotly map of Canada, coloured from pale blue (low)
-to deep red (capacity factor 1.0). All 8760 hours are embedded once as base64 `uint8` values
-(capacity factor * 255, rounded), and a small inline JS player restyles the map's single
-choropleth trace for the current hour. See docs/cf-animation.md.
+to deep red (capacity factor 1.0). All 8760 hours are embedded once as gzipped, base64-encoded
+`uint8` values (capacity factor * 255, rounded), and a small inline JS player restyles the
+map's single choropleth trace for the current hour. See docs/cf-animation.md.
 """
 
 import argparse
 import base64
+import gzip
 import json
 import math
 import re
@@ -253,13 +254,26 @@ __PLAYER_JS__
 """
 
 PLAYER_JS = """
-(function () {
+(async function () {
   const config = JSON.parse(document.getElementById("cf-config").textContent);
   const N = config.hours, cells = config.cells, speeds = config.speeds;
-  const binary = atob(document.getElementById("cf-data").textContent);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  // The frame data is gzipped, then base64 encoded: decode and decompress it in the browser.
+  const labelElement = document.getElementById("label");
+  labelElement.textContent = "Loading data...";
+  let bytes;
+  try {
+    const binary = atob(document.getElementById("cf-data").textContent);
+    const packed = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) packed[i] = binary.charCodeAt(i);
+    const unpacked = new Blob([packed]).stream().pipeThrough(new DecompressionStream("gzip"));
+    bytes = new Uint8Array(await new Response(unpacked).arrayBuffer());
+  } catch (e) {
+    labelElement.textContent = "Failed to load data: " + e;
+    throw e;
+  }
   if (bytes.length !== N * cells) {
+    labelElement.textContent = "Data has the wrong size";
     throw new Error("cf-data has " + bytes.length + " bytes, expected " + N * cells);
   }
 
@@ -371,6 +385,15 @@ PLAYER_JS = """
 })();
 """
 
+
+def pack_frames(frames: np.ndarray) -> str:
+    """Frames as gzipped, then base64-encoded, row-major bytes (the page decodes in reverse)."""
+    if frames.dtype != np.uint8:
+        raise ValueError(f"frames must be uint8, got {frames.dtype}")
+    raw = np.ascontiguousarray(frames).tobytes()
+    return base64.b64encode(gzip.compress(raw, compresslevel=9, mtime=0)).decode("ascii")
+
+
 SPEEDS = (0.5, 1, 2, 4, 8, 16)
 DEFAULT_SPEED = 1
 
@@ -386,8 +409,9 @@ def render_page(fig: Any, frames: np.ndarray, title: str) -> str:
         "month_names": list(MONTH_NAMES),
         "month_start_days": month_start_days(),
     }
-    figure_html = fig.to_html(include_plotlyjs=True, full_html=False, div_id="cfmap")
-    data = base64.b64encode(np.ascontiguousarray(frames).tobytes()).decode("ascii")
+    # plotly.js comes from the CDN, which the map's country and province outlines need anyway.
+    figure_html = fig.to_html(include_plotlyjs="cdn", full_html=False, div_id="cfmap")
+    data = pack_frames(frames)
     values = {
         "TITLE": title,
         "HOURS": str(n_hours),

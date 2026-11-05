@@ -11,7 +11,7 @@ A web animation is simpler here than video:
 
 Plotly's built-in `frames` mechanism will not scale (8760 frames x 2984 cells would be a JSON file of several hundred MB). Instead:
 - Render one `choropleth` trace (one rectangle per cell) with the hour-1 values.
-- Embed all values once, quantized to `uint8` (0-255 maps to CF 0-1, resolution about 0.004), base64-encoded: 8760 x 2984 bytes is about 26 MB raw, about 35 MB in the HTML. That loads fine in a browser.
+- Embed all values once, quantized to `uint8` (0-255 maps to CF 0-1, resolution about 0.004), gzipped and base64-encoded: 8760 x 2984 bytes is about 26 MB raw, about 7.6 MB in the HTML (the browser decompresses it with `DecompressionStream`).
 - A small inline JS player decodes the array and calls `Plotly.restyle(div, {z: [...]})` for the current hour (see Player controls below).
 
 ```mermaid
@@ -19,7 +19,7 @@ flowchart LR
     cellInfo["grid_cell_info.csv"] --> build["cf_animation.py"]
     cfTable["wind/solar_capacity_factor_YEAR.csv"] --> build
     build --> geo["GeoJSON cell rectangles"]
-    build --> packed["uint8 hour x cell array, base64"]
+    build --> packed["uint8 hour x cell array, gzip + base64"]
     geo --> html["output/cf-animation-TYPE-YYYYMMDD-HHMM.html"]
     packed --> html
 ```
@@ -40,10 +40,10 @@ flowchart LR
 - Stream the hourly table with the existing `iter_hourly_capacity_factors(path, cells)` from `src/flux_match/grid_cell_rankings.py`. It already validates the header, row count (8760), and the [0, 1] range, and hard fails on bad data. Fill a preallocated `numpy` `uint8` array `(8760, n_cells)` with `round(cf * 255)`.
 - Build cell rectangles: infer the grid spacing from the coordinates (expected 0.625 deg longitude by 0.5 deg latitude) and hard fail if any cell is not on that lattice, then make one GeoJSON `Polygon` per cell centered on its lon/lat.
 - Figure: `go.Choropleth(geojson=..., locations=cell_ids, z=hour1, zmin=0, zmax=255, colorscale=pale blue to deep red, marker_line_width=0)`, colorbar ticks relabeled as 0.0-1.0. Hover shows cell id, balancing area, and CF. Layout `geo`: `scope="north america"`, `showcountries`, `showsubunits` (provinces), `showlakes`, `projection_type="conic conformal"`, `lataxis_range ~[41, 70]`, `lonaxis_range ~[-142, -52]`.
-- Write HTML with `fig.to_html(include_plotlyjs=True, full_html=True, div_id="cfmap", post_script=PLAYER_JS)`, with the base64 data and controls injected into the page. Output filename follows the project convention: `output/cf-animation-<type>-<YYYYMMDD-HHMM>.html` using `TIMESTAMP_FORMAT` from `src/flux_match/paths.py`.
+- Write HTML with `fig.to_html(include_plotlyjs="cdn", full_html=False, div_id="cfmap")` wrapped in our own page template, with the gzipped data, controls and player script injected. Output filename follows the project convention: `output/cf-animation-<type>-<YYYYMMDD-HHMM>.html` using `TIMESTAMP_FORMAT` from `src/flux_match/paths.py`.
 - Keep pure helpers (`cell_polygons`, `quantize`, `hour_label`) separate from I/O so they can be tested.
 
-Note: Plotly's geo basemap (country and province outlines) is fetched from the Plotly CDN when the page opens, so viewing needs an internet connection.
+Note: plotly.js itself and the geo basemap (country and province outlines) are fetched from the Plotly CDN when the page opens, so viewing needs an internet connection.
 
 ## Wiring
 
