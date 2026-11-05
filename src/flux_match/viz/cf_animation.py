@@ -61,7 +61,10 @@ COLORSCALE = [
 # exceeds 0.5) use more of the palette. Zero stays at the bottom; values above 1 / boost are
 # drawn as the top colour (deep red). Hover text always shows the actual capacity factor.
 COLOR_BOOST = {"wind": 1.0, "solar": 1.2}
-MAP_HEIGHT_PX = 720
+# Width / height of the map box. The map scales to fit its width, so a box of about this shape
+# is filled by the map, and the colour bar (as tall as the plot area) is as tall as the map.
+MAP_ASPECT_RATIO = 1.8
+MAP_MAX_HEIGHT_VH = 85
 
 
 def month_start_days() -> list[int]:
@@ -196,7 +199,7 @@ def build_figure(
             zmax=color_max,
             colorscale=COLORSCALE,
             marker_line_width=0,
-            colorbar={"title": "Capacity factor"},
+            colorbar={"thickness": 14, "xpad": 4, "tickfont": {"size": 11}},
             hovertemplate="Cell %{location}<br>%{text}<br>CF %{z:.3f}<extra></extra>",
         )
     )
@@ -209,7 +212,12 @@ def build_figure(
         lataxis_range=[41, 70],
         lonaxis_range=[-142, -52],
     )
-    fig.update_layout(title=title, height=MAP_HEIGHT_PX, margin={"l": 0, "r": 0, "t": 40, "b": 0})
+    # No fixed size: the figure fills its container (see #map-box) and follows resizes.
+    fig.update_layout(
+        title={"text": title, "font": {"size": 16}},
+        autosize=True,
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
+    )
     return fig
 
 
@@ -231,6 +239,11 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
   #controls button { min-width: 4.5rem; }
   #controls label { display: flex; align-items: center; gap: 0.6em; font-size: 1.1rem; }
   #label { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+  #map-box {
+    width: min(100%, calc(__MAP_MAX_HEIGHT_VH__vh * __MAP_ASPECT_RATIO__));
+    aspect-ratio: __MAP_ASPECT_RATIO__;
+    margin: 0 auto;
+  }
   #slider-box { position: relative; padding: 0 8px; }
   #slider { width: 100%; margin: 0; }
   #months { position: relative; height: 1.5em; font-size: 0.8em; color: #555; }
@@ -238,7 +251,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-__FIGURE__
+<div id="map-box">__FIGURE__</div>
 <div id="controls">
   <button id="play">Play</button>
   <button id="back-day" title="Back 1 day">-1 d</button>
@@ -418,10 +431,19 @@ def render_page(fig: Any, frames: np.ndarray, title: str) -> str:
         "month_start_days": month_start_days(),
     }
     # plotly.js comes from the CDN, which the map's country and province outlines need anyway.
-    figure_html = fig.to_html(include_plotlyjs="cdn", full_html=False, div_id="cfmap")
+    figure_html = fig.to_html(
+        include_plotlyjs="cdn",
+        full_html=False,
+        div_id="cfmap",
+        default_width="100%",
+        default_height="100%",
+        config={"responsive": True},
+    )
     data = pack_frames(frames)
     values = {
         "TITLE": title,
+        "MAP_ASPECT_RATIO": str(MAP_ASPECT_RATIO),
+        "MAP_MAX_HEIGHT_VH": str(MAP_MAX_HEIGHT_VH),
         "HOURS": str(n_hours),
         "CONFIG": json.dumps(config),
         "PLAYER_JS": PLAYER_JS,
