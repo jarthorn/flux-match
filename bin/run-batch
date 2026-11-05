@@ -9,7 +9,7 @@
 set -euo pipefail
 
 MAX="${1:-9}"
-BATCH="${2:-vary-capacity-ratio}"
+BATCH="${2:-20261105-vary-capacity-ratio}"
 
 for solar in $(seq 0 "$MAX"); do
   for wind in $(seq 0 "$MAX"); do

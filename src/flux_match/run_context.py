@@ -111,7 +111,7 @@ def create_run(
     output_dir/<batch>/NNNN, numbered one past the batch's highest existing index."""
     # Validate everything before creating the folder so a bad input leaves no residue.
     if batch is not None:
-        _check_batch_name(output_dir, batch)
+        check_batch_name(output_dir, batch)
     config = Config.load(scenario_file, overrides=overrides)
     started = started or datetime.now()
     if batch is None:
@@ -139,7 +139,7 @@ def create_run(
     return ctx
 
 
-def _check_batch_name(output_dir: Path, name: str) -> None:
+def check_batch_name(output_dir: Path, name: str) -> None:
     if name in ("", ".", "..") or "/" in name or "\\" in name:
         raise ConfigError(f"Batch name must be a plain folder name: {name!r}")
     if (output_dir / name / CONFIG_NAME).is_file():

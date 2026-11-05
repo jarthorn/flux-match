@@ -33,16 +33,16 @@ class Config:
     ) -> Self:
         """`overrides` maps dotted keys (from `parse_override`) to values; each key must
         already exist in the merged file(s), so that a typo cannot be silently ignored."""
-        data = _read_toml(path)
+        data = read_toml(path)
         if inherit_defaults and path.resolve() != paths.defaults_path().resolve():
-            data = _deep_merge(_read_toml(paths.defaults_path()), data)
+            data = _deep_merge(read_toml(paths.defaults_path()), data)
         for key, value in (overrides or {}).items():
             _set_existing(data, key, value, path)
         return cls(data, path)
 
     def to_toml(self) -> str:
         """Serialize this config's top-level table as TOML (for run-folder snapshots)."""
-        return _dump_toml(self._data)
+        return dump_toml(self._data)
 
     def section(self, key: str) -> Config:
         value = self._lookup(key)
@@ -86,7 +86,7 @@ class Config:
         return f"{self._prefix}.{key}" if self._prefix else key
 
 
-def _read_toml(path: Path) -> dict[str, Any]:
+def read_toml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ConfigError(f"Config file not found: {path}")
     try:
@@ -144,10 +144,10 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
     return result
 
 
-def _dump_toml(data: dict[str, Any]) -> str:
+def dump_toml(data: dict[str, Any]) -> str:
     """Minimal TOML writer for the scalar, array, and nested-table shapes we use."""
     top_scalars = "".join(
-        f"{key} = {_dump_value(value)}\n"
+        f"{key} = {dump_value(value)}\n"
         for key, value in data.items()
         if not isinstance(value, dict)
     )
@@ -165,11 +165,11 @@ def _dump_section(path: str, data: dict[str, Any]) -> str:
         if isinstance(value, dict):
             nested.append(_dump_section(f"{path}.{key}", value))
         else:
-            lines.append(f"{key} = {_dump_value(value)}\n")
+            lines.append(f"{key} = {dump_value(value)}\n")
     return "".join(lines) + "".join(nested)
 
 
-def _dump_value(value: Any) -> str:
+def dump_value(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if type(value) is int:
@@ -179,5 +179,5 @@ def _dump_value(value: Any) -> str:
     if isinstance(value, str):
         return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
     if isinstance(value, list):
-        return "[ " + ", ".join(_dump_value(v) for v in value) + " ]"
+        return "[ " + ", ".join(dump_value(v) for v in value) + " ]"
     raise TypeError(f"unsupported TOML value type: {type(value).__name__}")
