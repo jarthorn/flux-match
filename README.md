@@ -17,6 +17,7 @@ uv run flux-match preprocess --run output/<run>      # overwrites this step's ou
 uv run flux-match dispatch --run output/<run>
 bin/viz output/<run>                                 # step 5: Streamlit dashboard
 bin/cf-anim --type wind|solar                        # hourly capacity-factor map animation
+bin/batch-summary --batch BATCH                      # summary.csv and invariants.toml for a batch
 bin/test                                             # lint and unit tests
 bin/format                                           # ruff fix and format
 ```
@@ -34,6 +35,13 @@ bin/run --batch dispatch-years --config 'dispatch.dispatch_years=[2023, 2024]' -
 ```
 
 The key must already exist in the resolved scenario and defaults, so a typo fails instead of being ignored; switching to a strategy whose table the scenario lacks needs a scenario file. The run's `config.toml` holds the overridden values, and `run.json` lists the overrides under `config_overrides`. `--config` cannot be combined with `--run`.
+
+`bin/batch-summary --batch BATCH` collates every run in `output/BATCH/` for offline analysis, writing two files to that folder:
+
+- `summary.csv`: one row per run, sorted by batch index. Columns are `batch_index` and `started`, then each `config.toml` value that differs between runs (or is missing from some, left blank there), named by dotted key (`selection.wind_capacity_ratio`), then these totals from `dispatch_stats`: `net_demand_pct`, `curtailment_pct` (0.0 where there is no variable generation, which `run.json` records as null), `satisfied_demand_hours_pct`, and `peak_net_demand_mw` with its balancing area `peak_net_demand_ba` (the highest of the per-area peaks).
+- `invariants.toml`: the `config.toml` values that are identical in every run, as nested tables.
+
+Every `config.toml` value is in exactly one of the two files. An integer and a float of the same value (`4` and `4.0`) count as identical, and `invariants.toml` keeps the lowest-indexed run's form; booleans never match numbers. Every subfolder of the batch folder must be a completed run (`dispatch` in `completed_steps`) whose `batch_index` matches its folder name; otherwise each bad run is reported and nothing is written.
 
 ## Layout
 
