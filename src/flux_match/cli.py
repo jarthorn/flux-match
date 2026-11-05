@@ -30,8 +30,12 @@ def _run_step(ctx: RunContext, step: str) -> None:
     ctx.complete_step(step)
 
 
-def _new_run(args: argparse.Namespace, *, batch: bool = False) -> RunContext:
-    ctx = create_run(paths.scenario_path(args.scenario), batch=batch, overrides=_overrides(args))
+def _new_run(args: argparse.Namespace) -> RunContext:
+    ctx = create_run(
+        paths.scenario_path(args.scenario),
+        batch=getattr(args, "batch", None),
+        overrides=_overrides(args),
+    )
     print(f"Created run folder {ctx.run_dir}")
     return ctx
 
@@ -53,7 +57,7 @@ def _overrides(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _cmd_all(args: argparse.Namespace) -> None:
-    ctx = _new_run(args, batch=args.batch)
+    ctx = _new_run(args)
     try:
         print("[fetch]")
         fetch.run(ctx.config)
@@ -112,8 +116,9 @@ def _parser() -> argparse.ArgumentParser:
     add_config(p)
     p.add_argument(
         "--batch",
-        action="store_true",
-        help="keep only config.toml, run.json and selected_sites.csv in the run folder",
+        metavar="NAME",
+        help="create the run in output/NAME/NNNN (next free index), keeping only config.toml, "
+        "run.json and selected_sites.csv",
     )
     p.set_defaults(handler=_cmd_all)
 
