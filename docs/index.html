@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flux Match</title>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --ink: #1a1f24;
+      --muted: #4a5560;
+      --rule: #d5d1c8;
+      --link: #1a4a6e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at top left, #ebe6dc 0%, transparent 50%),
+        linear-gradient(180deg, #faf8f4 0%, var(--bg) 40%, #efece5 100%);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 1rem;
+    }
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      margin: 2.5rem 0 1rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--rule);
+    }
+    p {
+      margin: 0 0 1rem;
+      color: var(--ink);
+    }
+    .muted { color: var(--muted); }
+    a {
+      color: var(--link);
+      text-underline-offset: 0.12em;
+    }
+    a:hover { text-decoration-thickness: 2px; }
+    .results {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .results li {
+      margin: 0 0 1.75rem;
+    }
+    .results h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0 0 0.4rem;
+    }
+    .results h3 a { text-decoration: none; }
+    .results h3 a:hover { text-decoration: underline; }
+    .results p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Flux Match</h1>
+    <p>
+      Flux Match is a simple dispatch model that simulates variable generation
+      (wind, solar, and batteries) against historical hourly electricity demand
+      across Canadian balancing areas. Generation is based on a hypothetical
+      allocation of sites chosen from map grid cells; the model measures how
+      well those choices cover real demand curves. It is deliberately
+      simplistic—it excludes economics, grid connection costs, and other
+      real-world constraints—and is meant for exploring site-selection
+      strategies rather than producing operational forecasts.
+    </p>
+    <p class="muted">
+      Demand and capacity-factor data come from the
+      <a href="https://coders.cme-emh.ca/">CODERS</a> database.
+      Source code is on
+      <a href="https://github.com/jarthorn/flux-match">GitHub</a>.
+    </p>
+
+    <h2>Results</h2>
+    <ul class="results">
+      <li>
+        <h3><a href="vary-capacity-ratio.html">Varying VRE capacity ratios</a></h3>
+        <p>
+          An experiment that varies solar and wind nameplate capacity in each
+          balancing area (as a ratio of average hourly demand) and plots the
+          effect on net demand, curtailment, and satisfied demand hours, using
+          a greedy annual-capacity site selection strategy.
+        </p>
+      </li>
+      <li>
+        <h3><a href="cf-animation-wind-20261105-1019.html">Hourly wind capacity factor, 2021</a></h3>
+        <p>
+          An interactive map of Canada showing hourly wind capacity factors for
+          every grid cell over a full year (8760 hours). Cells are coloured
+          from pale blue (0) to deep red (1.0); play, scrub, and step through
+          the year with the built-in controls.
+        </p>
+      </li>
+      <li>
+        <h3><a href="cf-animation-solar-20261105-1020.html">Hourly solar capacity factor, 2021</a></h3>
+        <p>
+          The same style of interactive map for solar capacity factors: hourly
+          values for each Canadian grid cell across 2021, with play/pause,
+          speed control, and a year scrubber.
+        </p>
+      </li>
+    </ul>
+
+    <footer>
+      Generated from the flux-match project.
+    </footer>
+  </main>
+</body>
+</html>
