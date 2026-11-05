@@ -217,12 +217,20 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
   body { font-family: sans-serif; margin: 0 1em; }
-  #controls { display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap; margin: 0.5em 0; }
-  #controls button { min-width: 4em; }
-  #label { font-variant-numeric: tabular-nums; margin-left: 1em; }
+  /* Large touch targets with room between them. */
+  #controls {
+    display: flex; gap: 0.9em 1em; align-items: center; flex-wrap: wrap; margin: 1em 0 1.2em;
+  }
+  #controls button, #controls select {
+    font-size: 1.25rem; min-height: 3rem; padding: 0.4em 0.9em; border-radius: 0.4em;
+  }
+  #controls button { min-width: 4.5rem; }
+  #controls label { display: flex; align-items: center; gap: 0.6em; font-size: 1.1rem; }
+  #label { font-variant-numeric: tabular-nums; font-size: 1.1rem; }
   #slider-box { position: relative; padding: 0 8px; }
   #slider { width: 100%; margin: 0; }
   #months { position: relative; height: 1.5em; font-size: 0.8em; color: #555; }
