@@ -1,3 +1,5 @@
+import base64
+import gzip
 import unittest
 
 import numpy as np
@@ -12,6 +14,7 @@ from flux_match.viz.cf_animation import (
     color_scale_max,
     hour_label,
     month_start_days,
+    pack_frames,
     quantize,
 )
 
@@ -72,6 +75,17 @@ class QuantizeTest(unittest.TestCase):
         for bad in (-0.001, 1.001, float("nan")):
             with self.assertRaises(DataError):
                 quantize(np.array([0.5, bad]))
+
+
+class PackFramesTest(unittest.TestCase):
+    def test_round_trips_in_hour_major_order(self):
+        frames = np.arange(12, dtype=np.uint8).reshape(3, 4)
+        raw = gzip.decompress(base64.b64decode(pack_frames(frames)))
+        self.assertEqual(raw, bytes(range(12)))
+
+    def test_non_uint8_fails(self):
+        with self.assertRaises(ValueError):
+            pack_frames(np.zeros((2, 2), dtype=np.float64))
 
 
 class ColorScaleTest(unittest.TestCase):
