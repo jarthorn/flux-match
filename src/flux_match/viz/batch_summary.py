@@ -257,7 +257,10 @@ def main(argv: list[str] | None = None) -> int:
     except FluxMatchError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    print(f"Wrote {batch_dir / SUMMARY_FILENAME} ({n_runs} runs, {len(varying)} varying config values)")
+    print(
+        f"Wrote {batch_dir / SUMMARY_FILENAME} ({n_runs} runs, {len(varying)} "
+        "varying config values)"
+    )
     print(f"Wrote {batch_dir / INVARIANTS_FILENAME} ({len(invariants)} invariant config values)")
     return 0
 
