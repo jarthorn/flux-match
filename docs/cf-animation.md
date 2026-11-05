@@ -1,6 +1,6 @@
 # Capacity factor map animation
 
-A standalone script that turns one year of hourly wind or solar capacity factors (8760 frames) into a single self-contained HTML animation: a Plotly map of Canada with each grid cell drawn as a rectangle, coloured green (low) to red (1.0). Wind and solar are written to separate files.
+A standalone script that turns one year of hourly wind or solar capacity factors (8760 frames) into a single self-contained HTML animation: a Plotly map of Canada with each grid cell drawn as a rectangle, coloured from pale blue (0) to deep red (1.0). Wind and solar are written to separate files.
 
 ## Format: web animation (single HTML file)
 
@@ -35,11 +35,11 @@ flowchart LR
 
 ## New module: `src/flux_match/viz/cf_animation.py`
 
-- CLI via `argparse`: `--type {wind,solar}` (required), `--year` (default: the single capacity-factor year in `data/coders/`; fail if ambiguous), `--out` (optional override).
+- CLI via `argparse`: `--type {wind,solar}` (required), `--year` (default: 2021), `--out` (optional override).
 - Load cells from `data/coders/grid_cell_info.csv` using `read_csv` from `src/flux_match/io.py` (`grid_cell`, `longitude`, `latitude`, `balancing_area`).
 - Stream the hourly table with the existing `iter_hourly_capacity_factors(path, cells)` from `src/flux_match/grid_cell_rankings.py`. It already validates the header, row count (8760), and the [0, 1] range, and hard fails on bad data. Fill a preallocated `numpy` `uint8` array `(8760, n_cells)` with `round(cf * 255)`.
 - Build cell rectangles: infer the grid spacing from the coordinates (expected 0.625 deg longitude by 0.5 deg latitude) and hard fail if any cell is not on that lattice, then make one GeoJSON `Polygon` per cell centered on its lon/lat.
-- Figure: `go.Choropleth(geojson=..., locations=cell_ids, z=hour1, zmin=0, zmax=255, colorscale=[green, yellow, red], marker_line_width=0)`, colorbar ticks relabeled as 0.0-1.0. Hover shows cell id, balancing area, and CF. Layout `geo`: `scope="north america"`, `showcountries`, `showsubunits` (provinces), `showlakes`, `projection_type="conic conformal"`, `lataxis_range ~[41, 70]`, `lonaxis_range ~[-142, -52]`.
+- Figure: `go.Choropleth(geojson=..., locations=cell_ids, z=hour1, zmin=0, zmax=255, colorscale=pale blue to deep red, marker_line_width=0)`, colorbar ticks relabeled as 0.0-1.0. Hover shows cell id, balancing area, and CF. Layout `geo`: `scope="north america"`, `showcountries`, `showsubunits` (provinces), `showlakes`, `projection_type="conic conformal"`, `lataxis_range ~[41, 70]`, `lonaxis_range ~[-142, -52]`.
 - Write HTML with `fig.to_html(include_plotlyjs=True, full_html=True, div_id="cfmap", post_script=PLAYER_JS)`, with the base64 data and controls injected into the page. Output filename follows the project convention: `output/cf-animation-<type>-<YYYYMMDD-HHMM>.html` using `TIMESTAMP_FORMAT` from `src/flux_match/paths.py`.
 - Keep pure helpers (`cell_polygons`, `quantize`, `hour_label`) separate from I/O so they can be tested.
 

@@ -2,10 +2,10 @@
 
     uv run --group viz python -m flux_match.viz.cf_animation --type wind|solar [--year Y]
 
-Each grid cell is drawn as a rectangle on a Plotly map of Canada, coloured green (low) to red
-(capacity factor 1.0). All 8760 hours are embedded once as base64 `uint8` values (capacity
-factor * 255, rounded), and a small inline JS player restyles the map's single choropleth
-trace for the current hour. See docs/cf-animation.md.
+Each grid cell is drawn as a rectangle on a Plotly map of Canada, coloured from pale blue (low)
+to deep red (capacity factor 1.0). All 8760 hours are embedded once as base64 `uint8` values
+(capacity factor * 255, rounded), and a small inline JS player restyles the map's single
+choropleth trace for the current hour. See docs/cf-animation.md.
 """
 
 import argparse
@@ -33,6 +33,9 @@ from flux_match.schema import HOURS_PER_YEAR
 HOURS_PER_DAY = 24
 GENERATION_TYPES = ("wind", "solar")
 
+# Default to 2021 as the most recent year in the CODERS dataset.
+DEFAULT_YEAR = 2021
+
 # CODERS grid spacing, in degrees.
 LON_STEP = 0.625
 LAT_STEP = 0.5
@@ -43,10 +46,19 @@ MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "O
 DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 assert sum(DAYS_IN_MONTH) * HOURS_PER_DAY == HOURS_PER_YEAR
 
-COLORSCALE = [[0.0, "#1a9641"], [0.5, "#ffffbf"], [1.0, "#d7191c"]]
+# Pale blue to deep red. Blue and red are distinguishable with red-green colour blindness and
+# carry no good/bad meaning; lightness falls and saturation rises steadily along the scale, so
+# the order also reads in greyscale.
+COLORSCALE = [
+    [0.0, "#bcd8ef"],  # dark enough to stand out from the basemap's land colour
+    [0.25, "#86b6e0"],
+    [0.5, "#a98bc0"],
+    [0.75, "#d9534f"],
+    [1.0, "#8b0a1a"],
+]
 # Colours are stretched by this factor so that types with low capacity factors (solar rarely
 # exceeds 0.5) use more of the palette. Zero stays at the bottom; values above 1 / boost are
-# drawn as the top colour. Hover text always shows the actual capacity factor.
+# drawn as the top colour (deep red). Hover text always shows the actual capacity factor.
 COLOR_BOOST = {"wind": 1.0, "solar": 1.2}
 MAP_HEIGHT_PX = 720
 
@@ -149,23 +161,6 @@ def check_spacing(longitudes: Sequence[float], latitudes: Sequence[float]) -> No
 
 def capacity_factor_path(generation_type: str, year: int) -> Path:
     return CODERS_DATA_DIR / f"{generation_type}_capacity_factor_{year}.csv"
-
-
-def default_year(generation_type: str) -> int:
-    """The only capacity-factor year available for `generation_type` in data/coders/."""
-    paths = sorted(CODERS_DATA_DIR.glob(f"{generation_type}_capacity_factor_*.csv"))
-    years = []
-    for path in paths:
-        suffix = path.stem.rsplit("_", 1)[-1]
-        if not suffix.isdigit():
-            raise DataError(f"Cannot read the year from {path.name}")
-        years.append(int(suffix))
-    if len(years) != 1:
-        raise DataError(
-            f"Expected exactly one {generation_type}_capacity_factor_<year>.csv in "
-            f"{CODERS_DATA_DIR}, found {years or 'none'}; choose one with --year"
-        )
-    return years[0]
 
 
 def load_frames(path: Path, cells: Sequence[str]) -> np.ndarray:
@@ -432,14 +427,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--type", dest="generation_type", required=True, choices=GENERATION_TYPES)
     parser.add_argument(
-        "--year", type=int, help="capacity-factor year (default: the only one in data/coders/)"
+        "--year", type=int, default=DEFAULT_YEAR, help="capacity-factor year (default: %(default)s)"
     )
     parser.add_argument("--out", type=Path, help="output HTML file (default: under output/)")
     args = parser.parse_args(argv)
     try:
-        year = args.year if args.year is not None else default_year(args.generation_type)
         dest = args.out or output_path(args.generation_type, datetime.now())
-        build_animation(args.generation_type, year, dest)
+        build_animation(args.generation_type, args.year, dest)
     except FluxMatchError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
