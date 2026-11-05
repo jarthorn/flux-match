@@ -368,7 +368,7 @@ class DispatchRunTest(TempDirTest):
             self.dir / "test.toml",
             self.dir / "output",
             datetime(2026, 10, 27, 20, 1),
-            batch=True,
+            batch="test",
         )
         batch_ctx.vre_hourly_path.write_text(self.ctx.vre_hourly_path.read_text())
         with redirect_stdout(StringIO()):

@@ -56,16 +56,48 @@ class RunContextTest(unittest.TestCase):
         with self.assertRaises(RunStateError):
             create_run(self.scenario, self.output, STARTED)
 
-    def test_batch_run_folder_includes_sequence_and_skips_existing(self):
-        first = create_run(self.scenario, self.output, STARTED, batch=True)
-        self.assertEqual(first.run_dir, self.output / "20261027-0905-0001-greedy")
-        # A non-batch folder or a hole in the sequence must not block later batch runs.
-        (self.output / "20261027-0905-greedy").mkdir()
-        (self.output / "20261027-0905-0003-greedy").mkdir()
-        second = create_run(self.scenario, self.output, STARTED, batch=True)
-        self.assertEqual(second.run_dir, self.output / "20261027-0905-0002-greedy")
-        third = create_run(self.scenario, self.output, STARTED, batch=True)
-        self.assertEqual(third.run_dir, self.output / "20261027-0905-0004-greedy")
+    def _manifest(self, ctx):
+        return json.loads((ctx.run_dir / MANIFEST_NAME).read_text())
+
+    def test_batch_runs_share_one_folder_across_start_times(self):
+        # Regression: runs in one batch used to get differing timestamped folders.
+        first = create_run(self.scenario, self.output, STARTED, batch="sweep")
+        second = create_run(
+            self.scenario, self.output, datetime(2026, 10, 27, 9, 17), batch="sweep"
+        )
+        self.assertEqual(first.run_dir, self.output / "sweep" / "0001")
+        self.assertEqual(second.run_dir, self.output / "sweep" / "0002")
+        self.assertTrue(first.batch)
+        manifest = self._manifest(second)
+        self.assertEqual((manifest["batch_name"], manifest["batch_index"]), ("sweep", 2))
+
+    def test_batch_index_follows_highest_existing_and_ignores_other_folders(self):
+        batch_dir = self.output / "sweep"
+        (batch_dir / "0005").mkdir(parents=True)
+        (batch_dir / "notes").mkdir()
+        (batch_dir / "12345").mkdir()
+        ctx = create_run(self.scenario, self.output, STARTED, batch="sweep")
+        self.assertEqual(ctx.run_dir, batch_dir / "0006")
+        self.assertEqual(self._manifest(ctx)["batch_index"], 6)
+
+    def test_non_batch_manifest_has_null_batch_fields(self):
+        manifest = self._manifest(create_run(self.scenario, self.output, STARTED))
+        self.assertIsNone(manifest["batch_name"])
+        self.assertIsNone(manifest["batch_index"])
+
+    def test_invalid_batch_name_creates_no_folder(self):
+        for name in ("", ".", "..", "a/b", "a\\b"):
+            with self.subTest(name=name), self.assertRaises(ConfigError):
+                create_run(self.scenario, self.output, STARTED, batch=name)
+        self.assertFalse(self.output.exists())
+
+    def test_batch_name_cannot_be_an_existing_run_folder(self):
+        run = create_run(self.scenario, self.output, STARTED)
+        with self.assertRaisesRegex(RunStateError, "existing run folder"):
+            create_run(self.scenario, self.output, STARTED, batch=run.run_dir.name)
+        self.assertEqual(
+            sorted(p.name for p in run.run_dir.iterdir()), [CONFIG_NAME, MANIFEST_NAME]
+        )
 
     def test_invalid_scenario_creates_no_run_folder(self):
         self.scenario.write_text("not = [valid")
@@ -104,8 +136,7 @@ class RunContextTest(unittest.TestCase):
         self.assertIsNone(ctx.read_stats("dispatch"))
 
     def test_remove_intermediate_files_deletes_vre_file_only(self):
-        ctx = create_run(self.scenario, self.output, STARTED, batch=True)
-        self.assertTrue(ctx.batch)
+        ctx = create_run(self.scenario, self.output, STARTED, batch="test")
         ctx.vre_hourly_path.write_text("x")
         ctx.selected_sites_path.write_text("y")
         ctx.remove_intermediate_files()

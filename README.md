@@ -10,7 +10,7 @@ Each run is configured by a scenario file, `scenarios/<name>.toml`. Shared param
 
 ```bash
 bin/run [--scenario NAME] [--config KEY=VALUE ...]   # steps 1-4 in a new run folder (default scenario: "balanced")
-bin/run --batch [--scenario NAME] [--config ...]     # as above, but keep only config.toml, run.json and selected_sites.csv
+bin/run --batch BATCH [--scenario NAME] [--config ...]  # as above, in output/BATCH/NNNN, keeping only config.toml, run.json and selected_sites.csv
 uv run flux-match fetch [--scenario NAME] [--config ...]  # step 1 only, into data/coders/
 uv run flux-match select [--scenario NAME [--config ...] | --run DIR]
 uv run flux-match preprocess --run output/<run>      # overwrites this step's outputs in place
@@ -23,14 +23,14 @@ bin/format                                           # ruff fix and format
 
 ## Batch Mode
 
-Batch mode (`--batch`, `all` only) is for large numbers of runs where only the site selection and `dispatch_stats` matter. Those three files have the same contents as in a normal run; `clusters.csv` and `dispatch_hourly_<year>.csv` are never written (dispatch still runs, to compute the stats), and `vre_by_ba_hourly.csv` is deleted when the run ends, including on failure. `bin/viz` cannot display a batch run, and individual steps cannot be re-run on it, since the hourly inputs are gone.
+Batch mode (`--batch BATCH`, `all` only) is for large numbers of runs where only the site selection and `dispatch_stats` matter. All runs with the same batch name go in one folder, `output/<BATCH>/`, each in a subfolder named by its zero-padded batch index (`0001`, `0002`, ...). Each new run takes the index one past the highest already in the folder, so re-using a batch name adds runs to it. `run.json` records `batch_name` and `batch_index` (both `null` for a normal run). The batch name must be a plain folder name and cannot be an existing run folder. Only config.toml, run.json and selected_sites.csv are kept. Those three files have the same contents as in a normal run; `clusters.csv` and `dispatch_hourly_<year>.csv` are never written (dispatch still runs, to compute the stats), and `vre_by_ba_hourly.csv` is deleted when the run ends, including on failure. `bin/viz` cannot display a batch run, and individual steps cannot be re-run on it, since the hourly inputs are gone.
 
 When a step is re-run on an existing folder, it reads that folder's `config.toml`, not `scenarios/`, and later steps are marked incomplete until they are re-run.
 
 When running in batch mode, it is helpful to be able to override specific config values in order to test a possibility space of values. `--config` overrides individual values for a new run, taking precedence over the scenario file and `defaults.toml`. Each override is a dotted key and a TOML value; a value that is not valid TOML is taken as a plain string. Several overrides can follow one `--config`, or the option can be repeated:
 
 ```bash
-bin/run --batch --config 'dispatch.dispatch_years=[2023, 2024]' --config selection.greedy.ranking_metric=median_daily_capacity
+bin/run --batch dispatch-years --config 'dispatch.dispatch_years=[2023, 2024]' --config selection.greedy.ranking_metric=median_daily_capacity
 ```
 
 The key must already exist in the resolved scenario and defaults, so a typo fails instead of being ignored; switching to a strategy whose table the scenario lacks needs a scenario file. The run's `config.toml` holds the overridden values, and `run.json` lists the overrides under `config_overrides`. `--config` cannot be combined with `--run`.
