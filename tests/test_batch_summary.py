@@ -12,8 +12,8 @@ from flux_match.config import dump_toml
 from flux_match.errors import DataError, RunStateError
 from flux_match.run_context import CONFIG_NAME, MANIFEST_NAME
 from flux_match.viz.batch_summary import (
-    INVARIANTS_NAME,
-    SUMMARY_NAME,
+    INVARIANTS_FILENAME,
+    SUMMARY_FILENAME,
     batch_dir_for,
     flatten_config,
     summary_stats,
@@ -77,11 +77,11 @@ class BatchSummaryTest(unittest.TestCase):
 
     def summarize(self) -> tuple[list[dict[str, str]], list[str], dict[str, Any]]:
         write_batch_summary(self.batch_dir)
-        with (self.batch_dir / SUMMARY_NAME).open(newline="") as f:
+        with (self.batch_dir / SUMMARY_FILENAME).open(newline="") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             header = list(reader.fieldnames or [])
-        invariants = tomllib.loads((self.batch_dir / INVARIANTS_NAME).read_text())
+        invariants = tomllib.loads((self.batch_dir / INVARIANTS_FILENAME).read_text())
         return rows, header, invariants
 
     def test_varying_values_in_csv_and_invariants_in_toml(self):
@@ -182,8 +182,8 @@ class BatchSummaryTest(unittest.TestCase):
         self.assertIn("0002: the dispatch step has not completed", stderr.getvalue())
         self.assertIn("0003: missing run.json", stderr.getvalue())
         self.assertIn("0004: batch_index 5 does not match", stderr.getvalue())
-        self.assertFalse((self.batch_dir / SUMMARY_NAME).exists())
-        self.assertFalse((self.batch_dir / INVARIANTS_NAME).exists())
+        self.assertFalse((self.batch_dir / SUMMARY_FILENAME).exists())
+        self.assertFalse((self.batch_dir / INVARIANTS_FILENAME).exists())
 
     def test_empty_batch_fails(self):
         with self.assertRaisesRegex(DataError, "No run folders"):
