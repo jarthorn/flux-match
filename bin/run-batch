@@ -1,21 +1,16 @@
 #!/bin/bash
-# Run the balanced scenario in batch mode over a grid of capacity ratios.
-# Overrides selection.solar_capacity_ratio and selection.wind_capacity_ratio
-# for every integer pair in 0..MAX (default MAX=9 → 100 runs). All runs go in
-# output/BATCH/NNNN (default BATCH=vary-capacity-ratio); an existing BATCH folder
-# is appended to.
+# Run the balanced scenario in batch mode over a grid of bess capacities and durations.
 #
-# Usage: bin/run-batch [MAX] [BATCH]
+# Usage: bin/run-batch [BATCH]
 set -euo pipefail
 
-MAX="${1:-9}"
-BATCH="${2:-20261105-vary-capacity-ratio}"
+BATCH="${1:-20261105-vary-bess-capacity}"
 
-for solar in $(seq 0 "$MAX"); do
-  for wind in $(seq 0 "$MAX"); do
-    echo "=== solar_capacity_ratio=$solar wind_capacity_ratio=$wind ==="
+for capacity in 1 2 3 4 5 6 7 8; do
+  for duration in 4 8 12 16 20; do
+    echo "=== bess_capacity_ratio=$capacity bess_duration=$duration ==="
     bin/run --batch "$BATCH" --scenario balanced \
-      --config "selection.solar_capacity_ratio=$solar" \
-      --config "selection.wind_capacity_ratio=$wind"
+      --config "dispatch.bess_capacity_ratio=$capacity" \
+      --config "dispatch.bess_duration=$duration"
   done
 done
