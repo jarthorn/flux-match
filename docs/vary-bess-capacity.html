@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flux Match Experiment: Varying BESS Capacity</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f6f2;
+      --ink: #1a1f24;
+      --muted: #4a5560;
+      --rule: #d5d1c8;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at top left, #ebe6dc 0%, transparent 50%),
+        linear-gradient(180deg, #faf8f4 0%, var(--bg) 40%, #efece5 100%);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.75rem;
+    }
+    .lede {
+      font-size: 1.1rem;
+      color: var(--muted);
+      max-width: 42rem;
+      margin: 0 0 1.5rem;
+    }
+    .meta {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.85rem;
+      color: var(--muted);
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      padding: 0.85rem 0;
+      margin-bottom: 2.5rem;
+    }
+    .meta dt {
+      display: inline;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .meta dd {
+      display: inline;
+      margin: 0 1.25rem 0 0.35rem;
+    }
+    .chart {
+      background: var(--panel);
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      padding: 0.5rem 0.5rem 0.25rem;
+      margin: 0 0 2rem;
+      box-shadow: 0 1px 0 rgba(26, 31, 36, 0.04);
+    }
+    .chart-wrap { width: 100%; height: 420px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Flux Match Experiment: Varying BESS Capacity</h1>
+    <p>
+      In this experiment, we vary battery energy storage (BESS) capacity in each balancing area across Canada,
+      and observe the impact on net demand, curtailment, and satisfied demand hours. The BESS capacity ratio
+      is the ratio of battery energy capacity to the area's average daily demand. Battery power rating is
+      capacity divided by duration (hours). Wind and solar capacity ratios are held
+      fixed. Results are averaged across all balancing areas in Canada. Results are calculated using
+      <a href="https://github.com/jarthorn/flux-match">Flux Match</a>, a very simple dispatch model for the
+      Canadian electricity system. Demand data, and solar/wind capacity factors, are taken from the
+      <a href="https://coders.cme-emh.ca/">CODERS</a> database.
+    </p>
+    <p>
+      Duration was also varied (4–20&nbsp;h) in this experiment, but with constant capacity. As a
+      result, the duration increase was offset by an equivalent decrease on power rating (doubling duration
+      requires dropping the power rating by half). Because of this, storage duration increase has a negligible
+      effect on net demand, curtailment, and satisfied demand hours. The charts below show results for a 4-hour duration only.
+    </p>
+    <p>
+      The results show a dramatic improvement in net demand, curtailment, and satisfied demand hours when BESS
+      capacity goes from 0 to 1. With higher BESS capacity beyond 1.0, there is a signnificant dropoff in improvement. This
+      suggests that building some initial BESS capacity is quite important for a VRE-dominated system, but once there
+      is enough BESS capacity to meet average daily demand, further investment may be better spent on increasing VRE capacity
+      than on BESS capacity.
+    </p>
+    <dl class="meta">
+      <dt>Batch</dt><dd>20261105-vary-bess-capacity</dd>
+      <dt>Runs</dt><dd>41 (capacity ratios 1–8 × durations 4–20h, plus capacity 0 at 4h); charts use duration = 4h</dd>
+      <dt>Strategy</dt><dd>greedy / annual_capacity</dd>
+      <dt>Dispatch years</dt><dd>2022–2024</dd>
+      <dt>VRE</dt><dd>solar capacity ratio: 2, wind capacity ratio: 3</dd>
+      <dt>BESS</dt><dd>round trip efficiency: 88%</dd>
+    </dl>
+
+    <div class="chart"><div id="chart-net-demand" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-curtailment" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-satisfied" class="chart-wrap"></div></div>
+  </main>
+
+  <script>
+    // Embedded from summary.csv (bess_duration = 4 only):
+    // [bess_capacity_ratio, net_demand_pct, curtailment_pct, satisfied_demand_hours_pct]
+    const rows = [
+      [0, 17.11, 25.89, 57.19],
+      [1, 7.85, 16.47, 86.66],
+      [2, 6.27, 14.85, 90.09],
+      [3, 5.57, 14.05, 91.62],
+      [4, 5.1, 13.44, 92.54],
+      [5, 4.77, 12.92, 93.16],
+      [6, 4.45, 12.41, 93.69],
+      [7, 4.17, 11.91, 94.13],
+      [8, 3.98, 11.47, 94.42],
+    ];
+
+    const lineColor = "hsl(188, 55%, 38%)";
+
+    function traceFor(metricIndex) {
+      return [{
+        x: rows.map(r => r[0]),
+        y: rows.map(r => r[metricIndex]),
+        mode: "lines+markers",
+        name: "bess_duration = 4",
+        line: { color: lineColor, width: 2 },
+        marker: { size: 7 },
+      }];
+    }
+
+    const baseLayout = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "#fbfaf7",
+      font: { family: "ui-sans-serif, system-ui, sans-serif", color: "#1a1f24", size: 13 },
+      margin: { t: 48, r: 24, b: 56, l: 64 },
+      xaxis: {
+        title: { text: "BESS Capacity Ratio" },
+        dtick: 1,
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      yaxis: {
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      showlegend: false,
+      hovermode: "x unified",
+    };
+
+    const config = { responsive: true, displayModeBar: false };
+
+    function draw(divId, title, yTitle, metricIndex) {
+      Plotly.newPlot(
+        divId,
+        traceFor(metricIndex),
+        {
+          ...baseLayout,
+          title: { text: title, font: { size: 16 } },
+          yaxis: { ...baseLayout.yaxis, title: { text: yTitle } },
+        },
+        config
+      );
+    }
+
+    draw(
+      "chart-net-demand",
+      "Net Demand vs BESS Capacity Ratio (duration = 4h)",
+      "net_demand_pct (%)",
+      1
+    );
+    draw(
+      "chart-curtailment",
+      "Curtailment vs BESS Capacity Ratio (duration = 4h)",
+      "curtailment_pct (%)",
+      2
+    );
+    draw(
+      "chart-satisfied",
+      "Satisfied Demand Hours vs BESS Capacity Ratio (duration = 4h)",
+      "satisfied_demand_hours_pct (%)",
+      3
+    );
+  </script>
+</body>
+</html>
