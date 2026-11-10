@@ -4,7 +4,7 @@ import numpy as np
 
 from flux_match.errors import DataError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection.total_variation import (
+from flux_match.steps.select.total_variation import (
     total_variation,
     total_variation_complementarity,
 )

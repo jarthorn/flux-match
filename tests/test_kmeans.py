@@ -4,7 +4,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 
 from flux_match.errors import DataError
-from flux_match.selection.kmeans import GeoKMeans, GeoPoint
+from flux_match.steps.select.kmeans import GeoKMeans, GeoPoint
 
 
 def as_sets(clusters: list[list[int]]) -> set[frozenset[int]]:

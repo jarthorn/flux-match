@@ -29,7 +29,8 @@ from flux_match.errors import ConfigError, DataError
 from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_cells_by_ba
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection.base import (
+from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, FetchParams, csv_path
+from flux_match.steps.select.base import (
     SELECTED_TYPES,
     Allocation,
     CapacityParams,
@@ -39,11 +40,10 @@ from flux_match.selection.base import (
     allocate_in_order,
     plan_allocations,
 )
-from flux_match.selection.total_variation import (
+from flux_match.steps.select.total_variation import (
     total_variation,
     total_variation_complementarity,
 )
-from flux_match.steps.fetch import GRID_CELL_TABLE, FetchParams, csv_path
 
 ANNUAL_RANK_FIELDS = ("ba_annual_wind_rank", "ba_annual_solar_rank")
 CAPACITY_FACTOR_TABLES = {

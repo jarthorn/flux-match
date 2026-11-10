@@ -13,7 +13,7 @@ from flux_match.errors import ConfigError, DataError
 from flux_match.io import read_csv
 from flux_match.run_context import create_run
 from flux_match.schema import DISPATCH_COLUMNS, HOURS_PER_YEAR
-from flux_match.steps.dispatch import (
+from flux_match.steps.dispatch.dispatch import (
     Battery,
     DispatchParams,
     DispatchTotals,

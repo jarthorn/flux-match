@@ -25,7 +25,7 @@ from flux_match.config import dump_toml, dump_value, read_toml
 from flux_match.errors import DataError, FluxMatchError, RunStateError, report_data_error
 from flux_match.io import write_csv_atomic
 from flux_match.run_context import CONFIG_NAME, MANIFEST_NAME, check_batch_name
-from flux_match.steps.dispatch import STATS_TOTAL_KEY
+from flux_match.steps.dispatch.dispatch import STATS_TOTAL_KEY
 
 SUMMARY_FILENAME = "summary.csv"
 INVARIANTS_FILENAME = "invariants.toml"

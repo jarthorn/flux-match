@@ -9,10 +9,10 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection import STRATEGIES, greedy
-from flux_match.selection.base import CapacityParams, GenerationType, Site
-from flux_match.selection.cluster import ClusterStrategy, round_robin_order, select_sites
-from flux_match.selection.kmeans import GeoKMeans
+from flux_match.steps.select import STRATEGIES, greedy
+from flux_match.steps.select.base import CapacityParams, GenerationType, Site
+from flux_match.steps.select.cluster import ClusterStrategy, round_robin_order, select_sites
+from flux_match.steps.select.kmeans import GeoKMeans
 
 SOLAR = GenerationType.SOLAR
 WIND_ONS = GenerationType.WIND_ONSHORE

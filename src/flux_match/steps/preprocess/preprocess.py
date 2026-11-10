@@ -25,8 +25,8 @@ from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_gri
 from flux_match.io import write_csv_atomic
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR, VRE_HOURLY_COLUMNS
-from flux_match.selection.base import GenerationType, Site, read_sites
-from flux_match.steps.fetch import GRID_CELL_TABLE, FetchParams, csv_path
+from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, FetchParams, csv_path
+from flux_match.steps.select.base import GenerationType, Site, read_sites
 
 WIND_TYPES = frozenset({GenerationType.WIND_ONSHORE, GenerationType.WIND_OFFSHORE})
 

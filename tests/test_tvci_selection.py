@@ -12,10 +12,10 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection import STRATEGIES
-from flux_match.selection.base import CapacityParams, GenerationType, Site
-from flux_match.selection.total_variation import total_variation_complementarity
-from flux_match.selection.tvci import (
+from flux_match.steps.select import STRATEGIES
+from flux_match.steps.select.base import CapacityParams, GenerationType, Site
+from flux_match.steps.select.total_variation import total_variation_complementarity
+from flux_match.steps.select.tvci import (
     TvciStrategy,
     candidate_pool_size,
     select_sites,

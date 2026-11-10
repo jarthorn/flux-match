@@ -2,10 +2,10 @@
 
 from flux_match.errors import ConfigError
 from flux_match.run_context import RunContext
-from flux_match.selection.base import Strategy, write_sites
-from flux_match.selection.cluster import ClusterStrategy
-from flux_match.selection.greedy import GreedyStrategy
-from flux_match.selection.tvci import TvciStrategy
+from flux_match.steps.select.base import Strategy, write_sites
+from flux_match.steps.select.cluster import ClusterStrategy
+from flux_match.steps.select.greedy import GreedyStrategy
+from flux_match.steps.select.tvci import TvciStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
     "cluster": ClusterStrategy,

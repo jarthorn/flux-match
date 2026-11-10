@@ -7,14 +7,14 @@ from pathlib import Path
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.selection.base import (
+from flux_match.steps.select.base import (
     CapacityParams,
     GenerationType,
     Site,
     allocate,
     target_capacity_mw,
 )
-from flux_match.selection.greedy import GreedyStrategy, select_sites
+from flux_match.steps.select.greedy import GreedyStrategy, select_sites
 
 SOLAR = GenerationType.SOLAR
 WIND_ONS = GenerationType.WIND_ONSHORE

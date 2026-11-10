@@ -19,7 +19,7 @@ from flux_match.balancing_area_demand import PROVINCE_BA_POPULATION
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.steps.fetch import (
+from flux_match.steps.fetch.fetch import (
     API_KEY_ENV,
     FetchParams,
     _read_env_file,
@@ -165,7 +165,7 @@ class FetchTest(unittest.TestCase):
         self.dotenv = Path(tmp.name) / ".env"
         # These tests cache only ON demand; balancing_area_demand needs every province and is
         # covered by BalancingAreaDemandStepTest and test_balancing_area_demand.py.
-        patcher = mock.patch("flux_match.steps.fetch._write_balancing_area_demand")
+        patcher = mock.patch("flux_match.steps.fetch.fetch._write_balancing_area_demand")
         self.ba_demand_step = patcher.start()
         self.addCleanup(patcher.stop)
 

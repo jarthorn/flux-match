@@ -13,7 +13,7 @@ from flux_match.config import Config
 from flux_match.errors import ConfigError
 from flux_match.grid_cell_rankings import read_cells_by_ba
 from flux_match.run_context import RunContext
-from flux_match.selection.base import (
+from flux_match.steps.select.base import (
     CapacityParams,
     Site,
     Strategy,

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from flux_match.errors import DataError
-from flux_match.selection.base import GenerationType, Site, read_sites, write_sites
+from flux_match.steps.select.base import GenerationType, Site, read_sites, write_sites
 
 SOLAR = GenerationType.SOLAR
 WIND_ONS = GenerationType.WIND_ONSHORE

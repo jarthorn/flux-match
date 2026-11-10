@@ -6,16 +6,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from flux_match import paths, selection
+from flux_match import paths
 from flux_match.config import Config, parse_override
 from flux_match.errors import ConfigError, FluxMatchError
 from flux_match.run_context import RUN_STEPS, RunContext, create_run, open_run
-from flux_match.steps import dispatch, fetch, preprocess
+from flux_match.steps import select
+from flux_match.steps.dispatch import dispatch
+from flux_match.steps.fetch import fetch
+from flux_match.steps.preprocess import preprocess
 
 DEFAULT_SCENARIO = "balanced"
 
 RUN_STEP_FUNCTIONS: dict[str, Callable[[RunContext], None]] = {
-    "select": selection.run,
+    "select": select.run,
     "preprocess": preprocess.run,
     "dispatch": dispatch.run,
 }
