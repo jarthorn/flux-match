@@ -6,6 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 from flux_match import paths
 from flux_match.config import Config, parse_override
 from flux_match.errors import ConfigError, FluxMatchError
@@ -149,6 +151,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv(paths.PROJECT_ROOT / ".env")
     args = _parser().parse_args(argv)
     try:
         args.handler(args)

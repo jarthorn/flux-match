@@ -12,6 +12,7 @@ from unittest import mock
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
+from dotenv import load_dotenv
 from test_balancing_area_demand import write_demand_files
 
 from flux_match import paths
@@ -21,7 +22,6 @@ from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
     FetchParams,
-    _read_env_file,
     _write_balancing_area_demand,
     csv_path,
     run,
@@ -168,7 +168,7 @@ class FetchTest(unittest.TestCase):
         self.ba_demand_step = patcher.start()
         self.addCleanup(patcher.stop)
 
-    def _run(self, opener, cfg=None, environ=None, dotenv_path=None) -> str:
+    def _run(self, opener, cfg=None, environ=None) -> str:
         """Run fetch and return what it wrote to stderr."""
         stderr = StringIO()
         with redirect_stdout(StringIO()), redirect_stderr(stderr):
@@ -176,7 +176,6 @@ class FetchTest(unittest.TestCase):
                 cfg or fetch_config(),
                 self.data_dir,
                 environ=environ if environ is not None else {API_KEY_ENV: SECRET},
-                dotenv_path=self.dotenv if dotenv_path is None else dotenv_path,
                 opener=opener,
             )
         return stderr.getvalue()
@@ -284,7 +283,7 @@ class FetchTest(unittest.TestCase):
         def opener(request, timeout=None):
             raise AssertionError("should not fetch when files are already local")
 
-        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self._run(opener, environ={})
         self.assertTrue(self.rankings.is_file())
 
     def _write_cache(self) -> None:
@@ -312,16 +311,16 @@ class FetchTest(unittest.TestCase):
     def test_rankings_rebuilt_only_when_older_than_an_input(self):
         self._write_cache()
         opener = RecordingOpener({})
-        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self._run(opener, environ={})
         self.rankings.write_text("sentinel\n")
         newest_input = max(p.stat().st_mtime for p in self.data_dir.glob("*.csv"))
 
         os.utime(self.rankings, (newest_input + 10, newest_input + 10))
-        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self._run(opener, environ={})
         self.assertEqual(self.rankings.read_text(), "sentinel\n")
 
         os.utime(self.rankings, (newest_input - 10, newest_input - 10))
-        self._run(opener, environ={}, dotenv_path=self.dotenv)
+        self._run(opener, environ={})
         self.assertEqual(read_rows(self.rankings)[0]["grid_cell"], "1")
 
     def test_balancing_area_demand_step_runs_after_downloads(self):
@@ -375,20 +374,23 @@ class FetchTest(unittest.TestCase):
             self._run(opener)
 
     def test_missing_api_key_mentions_env_var(self):
-        self.dotenv.write_text("# no key here\n")
         with self.assertRaisesRegex(DataError, API_KEY_ENV):
-            self._run(lambda *a, **k: None, environ={}, dotenv_path=self.dotenv)
+            self._run(lambda *a, **k: None, environ={})
 
     def test_dotenv_used_when_env_is_empty(self):
         self.dotenv.write_text(f'{API_KEY_ENV}="{SECRET}"\n')
-        self._run(RecordingOpener(responses()), environ={}, dotenv_path=self.dotenv)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            load_dotenv(self.dotenv)
+            self._run(RecordingOpener(responses()), environ=dict(os.environ))
         self.assertTrue((self.data_dir / "grid_cell_info.csv").is_file())
 
     def test_env_overrides_dotenv(self):
         self.dotenv.write_text(f"{API_KEY_ENV}=from-file\n")
-        self.assertEqual(_read_env_file(self.dotenv)[API_KEY_ENV], "from-file")
-        # RecordingOpener fails unless the request carries SECRET from the environment.
-        self._run(RecordingOpener(responses()), environ={API_KEY_ENV: SECRET})
+        with mock.patch.dict(os.environ, {API_KEY_ENV: SECRET}, clear=True):
+            load_dotenv(self.dotenv)
+            self.assertEqual(os.environ[API_KEY_ENV], SECRET)
+            # RecordingOpener fails unless the request carries SECRET from the environment.
+            self._run(RecordingOpener(responses()), environ=dict(os.environ))
 
     def test_missing_required_columns_fail(self):
         opener = RecordingOpener(responses(grid=[{"grid_cell": 1}]))
@@ -426,21 +428,6 @@ class FetchTest(unittest.TestCase):
                     self._run(RecordingOpener(responses(demand=rows)))
                 self.assertFalse((self.data_dir / "provincial_demand_ON_2024.csv").exists())
                 self.assertEqual([p.name for p in self.data_dir.glob("*.tmp*")], [])
-
-    def test_read_env_file_ignores_comments_and_export(self):
-        path = self.data_dir.parent / "sample.env"
-        path.write_text(
-            "\n".join(
-                [
-                    "# comment",
-                    "export OTHER=1",
-                    f"{API_KEY_ENV}='abc'",
-                    "not-a-pair",
-                ]
-            )
-            + "\n"
-        )
-        self.assertEqual(_read_env_file(path), {"OTHER": "1", API_KEY_ENV: "abc"})
 
 
 class BalancingAreaDemandStepTest(unittest.TestCase):

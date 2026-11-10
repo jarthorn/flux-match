@@ -94,7 +94,6 @@ def run(
     data_dir: Path = paths.CODERS_DATA_DIR,
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path | None = paths.PROJECT_ROOT / ".env",
     opener: Opener | None = None,
 ) -> None:
     # Imported lazily so source modules can use helpers from this file without a cycle.
@@ -106,7 +105,6 @@ def run(
         params,
         data_dir,
         environ=environ,
-        dotenv_path=dotenv_path,
         opener=opener,
     )
     _write_rankings(params, data_dir)
@@ -151,28 +149,6 @@ def _up_to_date(dest: Path, inputs: Sequence[Path]) -> bool:
 
 def _already_present(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
-
-
-def _read_env_file(path: Path) -> dict[str, str]:
-    if not path.is_file():
-        return {}
-    values: dict[str, str] = {}
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        name = name.strip()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-            value = value[1:-1]
-        if name:
-            values[name] = value
-    return values
 
 
 def _fill_missing_from_previous_hour(

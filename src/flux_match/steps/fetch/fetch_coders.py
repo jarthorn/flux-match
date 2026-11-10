@@ -2,7 +2,7 @@
 
 Authentication, HTTP, and response deserialization live here so other sources can be
 added beside this module without sharing that logic. Shared fetch helpers (cache checks,
-leap-day normalization, env-file parsing) come from fetch.py.
+leap-day normalization) come from fetch.py.
 """
 
 import json
@@ -24,7 +24,6 @@ from flux_match.steps.fetch.fetch import (
     _already_present,
     _drop_leap_day,
     _fill_missing_from_previous_hour,
-    _read_env_file,
     csv_filename,
 )
 
@@ -95,7 +94,6 @@ def download(
     data_dir: Path,
     *,
     environ: Mapping[str, str] | None = None,
-    dotenv_path: Path | None = None,
     opener: Opener | None = None,
 ) -> None:
     """Download any missing CODERS tables into data_dir."""
@@ -106,24 +104,22 @@ def download(
             missing.append((item, dest))
     if not missing:
         return
-    api_key = _coders_api_key(environ, dotenv_path)
+    api_key = _coders_api_key(environ)
     get = opener or urlopen
     for item, dest in missing:
         print(f"downloading {dest.name}", flush=True)
         _fetch_one(item, dest, api_key, get)
 
 
-def _coders_api_key(environ: Mapping[str, str] | None, dotenv_path: Path | None) -> str:
+def _coders_api_key(environ: Mapping[str, str] | None) -> str:
     env = os.environ if environ is None else environ
     key = (env.get(API_KEY_ENV) or "").strip()
     if key:
         return key
-    if dotenv_path is not None:
-        key = _read_env_file(dotenv_path).get(API_KEY_ENV, "").strip()
-        if key:
-            return key
-    location = dotenv_path if dotenv_path is not None else Path(".env")
-    raise DataError(f"{API_KEY_ENV} is not set. Put it in the environment or in {location}.")
+    raise DataError(
+        f"{API_KEY_ENV} is not set. Put it in the environment or in a .env file "
+        f"at the project root."
+    )
 
 
 def _params_desc(params: Mapping[str, str | int]) -> str:
