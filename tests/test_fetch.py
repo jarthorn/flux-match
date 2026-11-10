@@ -20,14 +20,13 @@ from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
 from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
-    API_KEY_ENV,
     FetchParams,
     _read_env_file,
     _write_balancing_area_demand,
     csv_path,
-    downloads,
     run,
 )
+from flux_match.steps.fetch.fetch_coders import API_KEY_ENV, downloads
 
 SOURCE = Path("test.toml")
 SECRET = "super-secret-test-key"
