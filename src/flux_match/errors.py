@@ -15,6 +15,11 @@ class DataError(FluxMatchError):
     """Input data is missing or malformed."""
 
 
+class FetchIncompleteError(FluxMatchError):
+    """A fetch stopped early, e.g. at an API rate limit. Nothing is wrong with the data it
+    did download; rerunning the fetch resumes where it stopped."""
+
+
 class RunStateError(FluxMatchError):
     """A run folder is missing or already exists, or a prerequisite step has not completed."""
 

@@ -3,9 +3,9 @@
 Skipped for any file already present. Writes to the shared data folder rather than a run
 folder, so downloads are reused across runs.
 
-Source-specific download logic lives in sibling modules (currently fetch_coders.py). This
-module owns the public run() entry point, shared cache helpers, and the derived tables
-written after downloads complete.
+Source-specific download logic lives in sibling modules (fetch_coders.py, and fetch_ninja.py).
+This module owns the public run() entry point, shared cache helpers, and the derived tables
+written after the raw downloads complete.
 
 Every hourly table is stored with exactly HOURS_PER_YEAR (8760) hours. In leap years,
 February 29 (hour-ending 1417-1440) is dropped and later hours are renumbered, so hour
@@ -29,10 +29,12 @@ older than any of that year's provincial demand files.
 """
 
 import csv
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
+from urllib.error import HTTPError
 
 from flux_match import paths
 from flux_match.balancing_area_demand import (
@@ -93,13 +95,16 @@ def run(
     config: Config,
     data_dir: Path = paths.CODERS_DATA_DIR,
     *,
+    ninja_dir: Path = paths.NINJA_DATA_DIR,
     environ: Mapping[str, str] | None = None,
     opener: Opener | None = None,
 ) -> None:
     # Imported lazily so source modules can use helpers from this file without a cycle.
-    from flux_match.steps.fetch import fetch_coders
+    from flux_match.steps.fetch import fetch_coders, fetch_ninja
 
-    params = FetchParams.from_config(config.section("fetch"))
+    fetch_config = config.section("fetch")
+    params = FetchParams.from_config(fetch_config)
+    ninja = fetch_ninja.NinjaParams.from_config(fetch_config.section("ninja"))
     data_dir.mkdir(parents=True, exist_ok=True)
     fetch_coders.download(
         params,
@@ -109,6 +114,18 @@ def run(
     )
     _write_rankings(params, data_dir)
     _write_balancing_area_demand(data_dir, params.demand_years)
+    if ninja.enabled:
+        # Last, because it can stop early at NINJA's rate limit and fail the run; everything
+        # above is already in place when it does.
+        (year,) = params.capacity_factor_years
+        fetch_ninja.download(
+            ninja,
+            year,
+            csv_path(data_dir, GRID_CELL_TABLE),
+            ninja_dir,
+            environ=environ,
+            opener=opener,
+        )
 
 
 def _write_rankings(params: FetchParams, data_dir: Path) -> None:
@@ -149,6 +166,32 @@ def _up_to_date(dest: Path, inputs: Sequence[Path]) -> bool:
 
 def _already_present(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
+
+
+def _http_error_body(error: HTTPError) -> str:
+    try:
+        return error.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+    finally:
+        error.close()
+
+
+def _message_from_body(body: str) -> str:
+    """The error text from an API error response, for including in our own error message."""
+    body = body.strip()
+    if not body:
+        return ""
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return body.splitlines()[0][:200]
+    if isinstance(payload, dict):
+        for key in ("message", "error", "description", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return body.splitlines()[0][:200]
 
 
 def _fill_missing_from_previous_hour(

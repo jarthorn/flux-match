@@ -11,6 +11,18 @@ demand_years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
 # Wind/solar capacity-factor tables are published per year; CODERS currently has 2021.
 capacity_factor_years = [2025]
 
+[fetch.ninja]
+# Also download hourly wind output for every grid cell from renewables.ninja into data/ninja/
+# (one request per cell, so a full download takes many hours; reruns resume where they stopped).
+enabled = false
+# Turbine used for every cell. Raw files are kept per model, height and year.
+turbine_height = 105
+turbine_model = "Vestas V150 4500"
+# Seconds to wait between requests. NINJA allows 1 request per second.
+request_sleep_s = 5
+# Stop once this many requests were sent in the last hour, counting earlier runs (NINJA allows 50).
+max_requests_per_hour = 50
+
 [selection]
 # Total solar capacity per balancing area, as a fraction of annual demand
 solar_capacity_ratio = 2

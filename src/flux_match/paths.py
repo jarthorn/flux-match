@@ -11,6 +11,7 @@ if not (PROJECT_ROOT / "pyproject.toml").is_file():
 
 DATA_DIR = PROJECT_ROOT / "data"
 CODERS_DATA_DIR = DATA_DIR / "coders"
+NINJA_DATA_DIR = DATA_DIR / "ninja"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 DEFAULTS_NAME = "defaults.toml"

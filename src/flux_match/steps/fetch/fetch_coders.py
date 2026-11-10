@@ -24,6 +24,8 @@ from flux_match.steps.fetch.fetch import (
     _already_present,
     _drop_leap_day,
     _fill_missing_from_previous_hour,
+    _http_error_body,
+    _message_from_body,
     csv_filename,
 )
 
@@ -126,31 +128,6 @@ def _params_desc(params: Mapping[str, str | int]) -> str:
     if not params:
         return "all rows"
     return " ".join(f"{k}={v}" for k, v in params.items())
-
-
-def _http_error_body(error: HTTPError) -> str:
-    try:
-        return error.read().decode("utf-8", errors="replace")
-    except OSError:
-        return ""
-    finally:
-        error.close()
-
-
-def _message_from_body(body: str) -> str:
-    body = body.strip()
-    if not body:
-        return ""
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return body.splitlines()[0][:200]
-    if isinstance(payload, dict):
-        for key in ("message", "error", "description"):
-            value = payload.get(key)
-            if isinstance(value, str) and value:
-                return value
-    return body.splitlines()[0][:200]
 
 
 def _open(item: Download, api_key: str, opener: Opener) -> Any:

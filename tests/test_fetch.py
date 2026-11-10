@@ -53,6 +53,7 @@ def fetch_config(
     provinces: list[str] | None = None,
     demand_years: list[int] | None = None,
     capacity_factor_years: list[int] | None = None,
+    ninja_enabled: bool = False,
 ) -> Config:
     return config(
         {
@@ -60,6 +61,13 @@ def fetch_config(
                 "provinces": provinces or ["ON"],
                 "demand_years": demand_years or [2024],
                 "capacity_factor_years": capacity_factor_years or [2021],
+                "ninja": {
+                    "enabled": ninja_enabled,
+                    "turbine_height": 105,
+                    "turbine_model": "Vestas V150 4500",
+                    "request_sleep_s": 5,
+                    "max_requests_per_hour": 50,
+                },
             }
         }
     )
@@ -326,6 +334,27 @@ class FetchTest(unittest.TestCase):
     def test_balancing_area_demand_step_runs_after_downloads(self):
         self._run(RecordingOpener(responses()))
         self.ba_demand_step.assert_called_once_with(self.data_dir, (2024,))
+
+    def test_ninja_download_runs_last_and_only_when_enabled(self):
+        ninja_dir = self.data_dir.parent / "ninja"
+        with mock.patch("flux_match.steps.fetch.fetch_ninja.download") as download:
+            self._run(RecordingOpener(responses()))
+            download.assert_not_called()
+
+            opener = RecordingOpener(responses())
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                run(
+                    fetch_config(ninja_enabled=True),
+                    self.data_dir,
+                    ninja_dir=ninja_dir,
+                    environ={API_KEY_ENV: SECRET},
+                    opener=opener,
+                )
+        download.assert_called_once()
+        args, kwargs = download.call_args
+        self.assertEqual(args[1:], (2021, self.data_dir / "grid_cell_info.csv", ninja_dir))
+        self.assertTrue(self.rankings.is_file())  # CODERS derivations finished before NINJA
 
     def test_exactly_one_capacity_factor_year_required(self):
         with self.assertRaisesRegex(ConfigError, "must have exactly one year"):
