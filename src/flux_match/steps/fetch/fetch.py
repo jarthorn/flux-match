@@ -177,19 +177,12 @@ def wind_capacity_factor_path(
     coders_dir: Path = paths.CODERS_DATA_DIR,
     ninja_dir: Path = paths.NINJA_DATA_DIR,
 ) -> Path:
-    """The hourly wind capacity-factor table for `fetch.wind_source`, for steps after fetch.
-
-    Hard-fails if it is not there, rather than falling back to another source.
-    `fetch_config` is the [fetch] table.
-    """
-    from flux_match.steps.fetch import fetch_ninja
+    """The hourly wind capacity-factor table for `fetch.wind_source`, for steps after fetch."""
 
     params = FetchParams.from_config(fetch_config)
     (year,) = params.capacity_factor_years
-    if params.wind_source == "coders":
-        path = csv_path(coders_dir, WIND_CF_TABLE, year=year)
-    else:
-        path = fetch_ninja.collated_path(ninja_dir, year)
+    wind_dir = ninja_dir if params.wind_source == "ninja" else coders_dir
+    path = csv_path(wind_dir, WIND_CF_TABLE, year=year)
     if not _already_present(path):
         raise DataError(
             f"{path} not found (fetch.wind_source = {params.wind_source!r}); "
