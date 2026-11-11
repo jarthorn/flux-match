@@ -14,6 +14,14 @@ NINJA allows 1 request per second and 50 per hour. Requests are spaced by `reque
 the run stops with a FetchIncompleteError before sending a request that would exceed
 `max_requests_per_hour` within a rolling hour. Request times are kept in `.requests.log` in the
 data folder, so the limit also counts requests made by earlier runs.
+
+collate() then combines the raw files into `data/ninja/wind_capacity_factor_<year>.csv`, laid out
+like CODERS' wind_capacity_factor table: an `h` column (hour 1-8760) and one column per grid cell,
+in grid_cell_info order, holding the capacity factor (electricity / CAPACITY_KW). February 29 is
+dropped in leap years. Cells without a raw file yet are filled with 0 and counted in a warning,
+so the file can be used before the download completes; it is rebuilt when a raw file is newer.
+The file is far too big to build in memory, so it is written CHUNK_ROWS hours at a time, reading
+only that slice of each raw file.
 """
 
 import calendar
@@ -27,17 +35,19 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, BinaryIO, Self
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError, FetchIncompleteError
+from flux_match.errors import ConfigError, DataError, FetchIncompleteError, report_data_error
+from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
     _already_present,
     _http_error_body,
     _message_from_body,
+    _up_to_date,
 )
 
 API_URL = "https://www.renewables.ninja/api/data/wind"
@@ -57,6 +67,7 @@ REQUEST_LOG_NAME = ".requests.log"
 RATE_WINDOW_S = 3600
 MIN_REQUEST_SLEEP_S = 1  # NINJA's limit is 1 request per second
 CAPACITY_TOLERANCE = 1e-6  # relative slack when checking output against CAPACITY_KW
+CHUNK_ROWS = 5 * 24  # hours of every raw file held in memory at once while collating
 
 GRID_CELL_COLUMNS = ("grid_cell", "latitude", "longitude")
 
@@ -246,8 +257,7 @@ def download(
         if i:
             sleep(params.request_sleep_s)
         print(f"downloading {dest.name} ({i + 1}/{len(missing)})", flush=True)
-        limiter.record()
-        _fetch_one(params, year, cell, dest, token, get, limiter.count)
+        _fetch_one(params, year, cell, dest, token, get, limiter, sleep=sleep)
 
 
 def _limit_message(
@@ -298,35 +308,50 @@ def _query(params: NinjaParams, year: int, cell: Cell) -> dict[str, str | int | 
 
 
 def _request(
-    params: NinjaParams, year: int, cell: Cell, token: str, opener: Opener, requests_sent: int
+    params: NinjaParams,
+    year: int,
+    cell: Cell,
+    token: str,
+    opener: Opener,
+    limiter: RequestLimiter,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> bytes:
     request = Request(
         f"{API_URL}?{urlencode(_query(params, year, cell))}",
         headers={"Authorization": f"Token {token}", "User-Agent": USER_AGENT},
     )
     where = f"cell {cell.grid_cell} ({cell.latitude}, {cell.longitude})"
-    try:
-        with opener(request, timeout=TIMEOUT_S) as response:
-            return response.read()
-    except HTTPError as e:
-        detail = _message_from_body(_http_error_body(e))
-        suffix = f": {detail}" if detail else ""
-        if e.code == 401:
-            raise DataError(f"NINJA rejected the API token (HTTP 401){suffix}") from None
-        if e.code == 403:
-            # Either a bad token or a block in front of the API (e.g. Cloudflare).
-            raise DataError(
-                f"NINJA refused the request (HTTP 403){suffix}. Check {API_TOKEN_ENV}; "
-                f"the request may also have been blocked."
-            ) from None
-        if e.code == 429:
-            raise FetchIncompleteError(
-                f"NINJA rate limit hit (HTTP 429) at {where} after {requests_sent} requests in "
-                f"the last hour{suffix}. Wait before rerunning the fetch."
-            ) from None
-        raise DataError(f"NINJA HTTP {e.code} for {where}{suffix}") from None
-    except URLError as e:
-        raise DataError(f"NINJA request failed for {where}: {e.reason}") from None
+    retried = False
+    while True:
+        limiter.record()
+        try:
+            with opener(request, timeout=TIMEOUT_S) as response:
+                return response.read()
+        except HTTPError as e:
+            detail = _message_from_body(_http_error_body(e))
+            suffix = f": {detail}" if detail else ""
+            if e.code == 502 and not retried:
+                # Transient gateway errors often succeed on a single retry.
+                sleep(params.request_sleep_s)
+                retried = True
+                continue
+            if e.code == 401:
+                raise DataError(f"NINJA rejected the API token (HTTP 401){suffix}") from None
+            if e.code == 403:
+                # Either a bad token or a block in front of the API (e.g. Cloudflare).
+                raise DataError(
+                    f"NINJA refused the request (HTTP 403){suffix}. Check {API_TOKEN_ENV}; "
+                    f"the request may also have been blocked."
+                ) from None
+            if e.code == 429:
+                raise FetchIncompleteError(
+                    f"NINJA rate limit hit (HTTP 429) at {where} after {limiter.count} requests "
+                    f"in the last hour{suffix}. Wait before rerunning the fetch."
+                ) from None
+            raise DataError(f"NINJA HTTP {e.code} for {where}{suffix}") from None
+        except URLError as e:
+            raise DataError(f"NINJA request failed for {where}: {e.reason}") from None
 
 
 def _fetch_one(
@@ -336,9 +361,11 @@ def _fetch_one(
     dest: Path,
     token: str,
     opener: Opener,
-    requests_sent: int,
+    limiter: RequestLimiter,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    body = _request(params, year, cell, token, opener, requests_sent)
+    body = _request(params, year, cell, token, opener, limiter, sleep=sleep)
     validate_raw(body, year, dest.name)
     tmp = dest.with_name(dest.name + ".tmp")
     try:
@@ -389,3 +416,141 @@ def validate_raw(body: bytes, year: int, name: str) -> None:
         hours += 1
     if hours != expected_hours:
         raise DataError(f"{name}: expected {expected_hours} hours for {year}, got {hours}")
+
+
+def collated_path(ninja_dir: Path, year: int) -> Path:
+    return ninja_dir / f"wind_capacity_factor_{year}.csv"
+
+
+def collate(params: NinjaParams, year: int, grid_cell_info: Path, ninja_dir: Path) -> None:
+    """Write wind_capacity_factor_<year>.csv from the raw files downloaded so far.
+
+    Skipped if there are no raw files, or the output is newer than all of them. Cells that have
+    no raw file are filled with capacity factor 0 and reported in a warning.
+    """
+    cells = read_cells(grid_cell_info)
+    directory = raw_dir(ninja_dir, params, year)
+    dest = collated_path(ninja_dir, year)
+    present = [c for c in cells if _already_present(raw_path(directory, c))]
+    if not present:
+        print(f"NINJA wind: no raw files yet, not writing {dest.name}", flush=True)
+        return
+    if _up_to_date(dest, [raw_path(directory, c) for c in present]):
+        print(f"NINJA wind: {dest.name} is up to date", flush=True)
+        return
+    print(
+        f"writing {dest.name} from {len(present)} of {len(cells)} cells "
+        f"({directory.relative_to(ninja_dir)})",
+        flush=True,
+    )
+    readers = {c.grid_cell: _RawReader(raw_path(directory, c)) for c in present}
+    _write_collated(dest, cells, readers, year)
+    if len(present) < len(cells):
+        report_data_error(
+            f"{dest.name}: {len(cells) - len(present)} of {len(cells)} cells have no NINJA data "
+            f"yet and are filled with capacity factor 0; rerun the fetch to download them"
+        )
+
+
+def _expected_times(year: int) -> list[str]:
+    """The `YYYY-MM-DD HH:MM` of each of the 8760 output hours, without February 29."""
+    start = datetime(year, 1, 1)
+    hours = (start + timedelta(hours=h) for h in range(HOURS_PER_YEAR + 24))
+    times = [f"{t:%Y-%m-%d %H:%M}" for t in hours if (t.month, t.day) != (2, 29)]
+    return times[:HOURS_PER_YEAR]
+
+
+def _write_collated(
+    dest: Path, cells: list[Cell], readers: dict[str, _RawReader], year: int
+) -> None:
+    """Write the table CHUNK_ROWS rows at a time: each chunk reads that slice of every raw file
+    into memory, writes it, and is dropped. Written to a temporary file, then renamed."""
+    times = _expected_times(year)
+    skip_leap_day = calendar.isleap(year)
+    zeros = ["0"] * CHUNK_ROWS
+    tmp = dest.with_name(dest.name + ".tmp")
+    try:
+        with tmp.open("w", newline="") as out:
+            writer = csv.writer(out)
+            writer.writerow(["h", *(c.grid_cell for c in cells)])
+            for first in range(0, HOURS_PER_YEAR, CHUNK_ROWS):
+                chunk_times = times[first : first + CHUNK_ROWS]
+                columns = [
+                    readers[c.grid_cell].read(chunk_times, first, skip_leap_day)
+                    if c.grid_cell in readers
+                    else zeros
+                    for c in cells
+                ]
+                for i in range(len(chunk_times)):
+                    writer.writerow([first + i + 1, *(column[i] for column in columns)])
+        for reader in readers.values():
+            reader.check_finished()
+        tmp.replace(dest)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+class _RawReader:
+    """Reads one raw file a slice of hours at a time, remembering where the last slice ended so
+    that no file needs to stay open (or be re-read from the start) between slices."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._offset = 0
+        self._columns: tuple[int, int] | None = None  # indexes of `time` and `electricity`
+
+    def read(self, times: list[str], first_hour: int, skip_leap_day: bool) -> list[str]:
+        """Capacity factors for the next `times`, which start at output hour `first_hour` + 1.
+        Fails unless each row's time matches. A leap year's February 29 rows are passed over."""
+        values = []
+        with self.path.open("rb") as f:
+            f.seek(self._offset)
+            if self._columns is None:
+                self._columns = self._read_header(f)
+            time_i, value_i = self._columns
+            for n, expected in enumerate(times, start=first_hour + 1):
+                row = self._next_row(f, n, skip_leap_day, time_i)
+                where = f"{self.path.name} hour {n}"
+                if len(row) <= max(time_i, value_i):
+                    raise DataError(f"{where}: short row {row}")
+                if row[time_i][:16] != expected:
+                    raise DataError(f"{where}: expected time {expected}, got {row[time_i]!r}")
+                values.append(_capacity_factor(row[value_i], where))
+            self._offset = f.tell()
+        return values
+
+    def check_finished(self) -> None:
+        """Fail if the file has anything left after the last hour."""
+        with self.path.open("rb") as f:
+            f.seek(self._offset)
+            if f.read().strip():
+                raise DataError(f"{self.path.name}: more than the {HOURS_PER_YEAR} expected hours")
+
+    def _read_header(self, f: BinaryIO) -> tuple[int, int]:
+        header = next(csv.reader([f.readline().decode("utf-8")]), [])
+        if "time" not in header or "electricity" not in header:
+            raise DataError(f"{self.path.name}: expected 'time' and 'electricity' columns")
+        return header.index("time"), header.index("electricity")
+
+    def _next_row(self, f: BinaryIO, hour: int, skip_leap_day: bool, time_i: int) -> list[str]:
+        while True:
+            line = f.readline()
+            if not line:
+                raise DataError(f"{self.path.name}: file ends before hour {hour}")
+            if not line.strip():
+                continue
+            row = next(csv.reader([line.decode("utf-8")]))
+            if skip_leap_day and len(row) > time_i and row[time_i][5:10] == "02-29":
+                continue
+            return row
+
+
+def _capacity_factor(text: str, where: str) -> str:
+    """Output in kW as a capacity factor, to NINJA's precision (0.001 kW of CAPACITY_KW)."""
+    try:
+        value = float(text)
+    except ValueError:
+        raise DataError(f"{where}: bad electricity value {text!r}") from None
+    if not 0 <= value <= CAPACITY_KW * (1 + CAPACITY_TOLERANCE):  # also rejects NaN
+        raise DataError(f"{where}: electricity {value} outside 0..{CAPACITY_KW}")
+    return f"{min(value / CAPACITY_KW, 1.0):.8f}".rstrip("0").rstrip(".")

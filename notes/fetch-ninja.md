@@ -7,11 +7,11 @@ I want to add a new source for wind capacity factor data: renewables.ninja. Read
 
 Notes:
 - Implementation should live in src/steps/fetch/fetch_ninja.py
-- We likely need to write the final output file in a streaming fashion one column at a time because it is very large, or some other chunking method.
+- We likely need to write the final output file in chunks because the final output file will be very large and we can't keep 2984 input file handles open at once. This should read 5 days (120 rows) of data at a time from the raw input files into an in-memory matrix, write that chunk to disk, and then repeat.
 - Note that the API has a rate limit of 1 request per second, and 50 requests per hour. Let's add a sleep between requests to be polite (configurable, starting with 5 seconds). Each run should track the start time, and then stop proactively with a clear console message if it reaches 50 requests within a rolling 1-hour window, to avoid hitting the rate limit. After some initial testing we'll ramp up the sleep time between requests so that the script can safely run for many hours.
 - Although renewables.ninja also provides solar capacity factors, we are only interested in their wiind data for now.
 - We can probably set interpolate=false when calling the API, since they use the same MERRA2 grid cells that this project is using.
 - I have added NINJA_API_TOKEN to the environment.
 - The final output file should be located at data/ninja/wind_capacity_factor_{year}.csv
 - All time should be in UTC (use `local_time=false`). Drop February 29th for leap years so that the final file always has 8760 rows of data.
-- Step 2 should only run if all the data from step 1 is present. It should also be skipped if the output file is already present and newer than any raw fetch files.
+- Step 2 should be skipped if the output file is already present and newer than all raw fetch files. If only partial data is available from step 1, then fill in the remaining columns with capacity factor values of 0, and print a warning stating how many cells had zero data. This will enable me to start building some downstream tools based on the file while we wait for the remaining data to be fetched.

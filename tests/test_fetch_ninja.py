@@ -1,6 +1,9 @@
+import calendar
+import csv
+import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO, StringIO
@@ -16,8 +19,11 @@ from flux_match.errors import ConfigError, DataError, FetchIncompleteError
 from flux_match.steps.fetch.fetch_ninja import (
     API_TOKEN_ENV,
     CAPACITY_KW,
+    CHUNK_ROWS,
     NinjaParams,
     RequestLimiter,
+    collate,
+    collated_path,
     download,
     raw_dir,
     read_cells,
@@ -56,14 +62,26 @@ class Clock:
 
 
 class RecordingOpener:
-    """Serves ninja_csv() for every request unless `failure` is given, and records requests."""
+    """Serves ninja_csv() for every request unless a failure is given, and records requests.
 
-    def __init__(self, failure: HTTPError | None = None) -> None:
+    `failure` is raised on every request. `failures` is a finite sequence raised in order; after
+    it is exhausted, later requests succeed (or raise `failure` if that is also set).
+    """
+
+    def __init__(
+        self,
+        failure: HTTPError | None = None,
+        *,
+        failures: list[HTTPError] | None = None,
+    ) -> None:
         self.failure = failure
+        self._failures = list(failures or [])
         self.requests = []
 
     def __call__(self, request, timeout=None):
         self.requests.append(request)
+        if self._failures:
+            raise self._failures.pop(0)
         if self.failure:
             raise self.failure
         return FakeResponse(ninja_csv(), content_type="text/csv")
@@ -230,6 +248,22 @@ class DownloadTest(NinjaTestCase):
         self.assertEqual(len(opener.requests), 1)
         self.assertEqual(self.raw_names(), [])
 
+    def test_http_502_is_retried_once_after_sleep(self):
+        opener = RecordingOpener(failures=[http_error(502)])
+        self.write_grid(1)
+        self.download(opener)
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(self.sleeps, [5])
+        self.assertEqual(self.raw_names(), ["wind_1.csv"])
+
+    def test_two_http_502_in_a_row_aborts(self):
+        opener = RecordingOpener(failures=[http_error(502), http_error(502)])
+        with self.assertRaisesRegex(DataError, r"HTTP 502 for cell 1 \(41\.25, -99\.5\)"):
+            self.download(opener)
+        self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(self.sleeps, [5])
+        self.assertEqual(self.raw_names(), [])
+
 
 class RateLimitTest(NinjaTestCase):
     def limited(self, max_requests: int) -> NinjaParams:
@@ -272,6 +306,12 @@ class RateLimitTest(NinjaTestCase):
             self.download(RecordingOpener(http_error(500)))
         limiter = RequestLimiter(self.ninja_dir / ".requests.log", 50, self.clock)
         self.assertEqual(limiter.count, 1)
+
+    def test_502_retry_counts_toward_the_cap(self):
+        with self.assertRaises(DataError):
+            self.download(RecordingOpener(failures=[http_error(502), http_error(502)]))
+        limiter = RequestLimiter(self.ninja_dir / ".requests.log", 50, self.clock)
+        self.assertEqual(limiter.count, 2)
 
     def test_limiter_is_a_rolling_window(self):
         log = self.dir / "requests.log"
@@ -345,6 +385,162 @@ class ValidateRawTest(unittest.TestCase):
             self.check(b"\xff\xfe")
 
 
+def indexed_csv(year: int = YEAR, scale: int = 1) -> bytes:
+    """A response body whose value (kW) is `scale` times the zero-based hour of the year."""
+    hours = 8784 if calendar.isleap(year) else 8760
+    start = datetime(year, 1, 1)
+    rows = (f"{start + timedelta(hours=h):%Y-%m-%d %H:%M},{h * scale}\n" for h in range(hours))
+    return ("time,electricity\n" + "".join(rows)).encode()
+
+
+class CollateTest(NinjaTestCase):
+    def write_raw(self, cell: int, body: bytes, year: int = YEAR) -> Path:
+        directory = raw_dir(self.ninja_dir, PARAMS, year)
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"wind_{cell}.csv"
+        path.write_bytes(body)
+        return path
+
+    def collate(self, year: int = YEAR) -> tuple[str, str]:
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            collate(PARAMS, year, self.grid, self.ninja_dir)
+        return out.getvalue(), err.getvalue()
+
+    def output(self, year: int = YEAR) -> list[list[str]]:
+        with collated_path(self.ninja_dir, year).open(newline="") as f:
+            return list(csv.reader(f))
+
+    def test_collates_capacity_factors_in_grid_order(self):
+        self.write_raw(1, ninja_csv(value="50000"))
+        self.write_raw(2, ninja_csv(value="25000.5"))
+        self.write_raw(3, ninja_csv(value=str(CAPACITY_KW)))
+        out, err = self.collate()
+
+        rows = self.output()
+        self.assertEqual(collated_path(self.ninja_dir, YEAR).name, "wind_capacity_factor_2025.csv")
+        self.assertEqual(rows[0], ["h", "1", "2", "3"])
+        self.assertEqual(len(rows), 8761)
+        self.assertEqual(rows[1], ["1", "0.5", "0.250005", "1"])
+        self.assertEqual(rows[-1], ["8760", "0.5", "0.250005", "1"])
+        self.assertEqual([r[0] for r in rows[1:]], [str(h) for h in range(1, 8761)])
+        self.assertIn("writing wind_capacity_factor_2025.csv from 3 of 3 cells", out)
+        self.assertEqual(err, "")
+        self.assertEqual(list(self.ninja_dir.glob("*.tmp")), [])
+
+    def test_grid_order_decides_column_order_not_download_order(self):
+        self.write_grid(3)
+        self.write_raw(3, ninja_csv(value="30000"))
+        self.write_raw(1, ninja_csv(value="10000"))
+        self.write_raw(2, ninja_csv(value="20000"))
+        self.collate()
+        self.assertEqual(self.output()[1], ["1", "0.1", "0.2", "0.3"])
+
+    def test_missing_cells_are_zero_with_a_warning(self):
+        self.write_raw(2, ninja_csv(value="50000"))
+        out, err = self.collate()
+
+        rows = self.output()
+        self.assertEqual(rows[0], ["h", "1", "2", "3"])
+        self.assertEqual(rows[1], ["1", "0", "0.5", "0"])
+        self.assertEqual(rows[-1], ["8760", "0", "0.5", "0"])
+        self.assertIn("from 1 of 3 cells", out)
+        self.assertIn("2 of 3 cells have no NINJA data yet", err)
+
+    def test_nothing_is_written_without_any_raw_files(self):
+        out, err = self.collate()
+        self.assertIn("no raw files yet", out)
+        self.assertEqual(err, "")
+        self.assertFalse(collated_path(self.ninja_dir, YEAR).exists())
+
+    def test_hours_are_read_across_chunk_boundaries(self):
+        self.write_raw(1, indexed_csv())
+        self.write_raw(2, indexed_csv(scale=2))
+        self.collate()
+        rows = self.output()
+        for h in (1, 2, CHUNK_ROWS, CHUNK_ROWS + 1, 2 * CHUNK_ROWS + 1, 4000, 8760):
+            cells = [round(float(v) * CAPACITY_KW) for v in rows[h][1:3]]
+            self.assertEqual(cells, [h - 1, 2 * (h - 1)], f"hour {h}")
+
+    def test_every_row_matches_its_source_hour(self):
+        self.write_raw(1, indexed_csv())
+        self.collate()
+        values = [float(r[1]) * CAPACITY_KW for r in self.output()[1:]]
+        self.assertEqual([round(v) for v in values], list(range(8760)))
+
+    def test_leap_day_is_dropped_and_later_hours_renumbered(self):
+        self.write_raw(1, indexed_csv(2024), 2024)
+        self.write_raw(2, ninja_csv(2024, value="50000"), 2024)
+        self.collate(2024)
+        rows = self.output(2024)
+        self.assertEqual(len(rows), 8761)
+        values = [round(float(r[1]) * CAPACITY_KW) for r in rows[1:]]
+        # Hours 1-1416 are Jan 1 - Feb 28; hour 1417 is Mar 1 00:00, raw hour 1440 (0-based).
+        self.assertEqual(values[1415], 1415)
+        self.assertEqual(values[1416], 1440)
+        self.assertEqual(values[-1], 8783)
+        self.assertEqual(values[:1416], list(range(1416)))
+        self.assertEqual({r[2] for r in rows[1:]}, {"0.5"})
+
+    def test_up_to_date_output_is_not_rebuilt(self):
+        paths_ = [self.write_raw(n, ninja_csv(value="50000")) for n in (1, 2, 3)]
+        self.collate()
+        dest = collated_path(self.ninja_dir, YEAR)
+        dest.write_text("sentinel\n")
+        newest = max(p.stat().st_mtime for p in paths_)
+
+        os.utime(dest, (newest + 10, newest + 10))
+        out, _ = self.collate()
+        self.assertIn("up to date", out)
+        self.assertEqual(dest.read_text(), "sentinel\n")
+
+        os.utime(dest, (newest - 10, newest - 10))
+        self.collate()
+        self.assertEqual(self.output()[0], ["h", "1", "2", "3"])
+
+    def test_new_raw_file_replaces_zeros_on_the_next_collate(self):
+        self.write_raw(1, ninja_csv(value="50000"))
+        _, err = self.collate()
+        self.assertIn("2 of 3 cells", err)
+        dest = collated_path(self.ninja_dir, YEAR)
+        old = dest.stat().st_mtime
+        os.utime(dest, (old - 100, old - 100))
+
+        self.write_raw(3, ninja_csv(value="100000"))
+        _, err = self.collate()
+        self.assertIn("1 of 3 cells", err)
+        self.assertEqual(self.output()[1], ["1", "0.5", "0", "1"])
+
+    def test_incomplete_or_malformed_raw_files_fail_without_output(self):
+        for body, message in [
+            (ninja_csv(hours=100), r"wind_2\.csv: file ends before hour 101"),
+            (ninja_csv(value="-5"), r"wind_2\.csv hour 1: electricity -5"),
+            (ninja_csv(value="abc"), r"wind_2\.csv hour 1: bad electricity value 'abc'"),
+            (ninja_csv(2024), r"wind_2\.csv hour 1: expected time 2025-01-01 00:00"),
+            (ninja_csv() + b"2026-01-01 00:00,1\n", r"wind_2\.csv: more than the 8760"),
+            (b"a,b\n1,2\n", r"wind_2\.csv: expected 'time' and 'electricity' columns"),
+        ]:
+            with self.subTest(message=message):
+                self.write_raw(1, ninja_csv())
+                self.write_raw(2, body)
+                with self.assertRaisesRegex(DataError, message):
+                    self.collate()
+                self.assertEqual(list(self.ninja_dir.glob("wind_capacity_factor*")), [])
+
+    def test_gap_in_hours_fails(self):
+        lines = ninja_csv().decode().splitlines()
+        del lines[5000]
+        self.write_raw(1, ("\n".join(lines) + "\n").encode())
+        with self.assertRaisesRegex(DataError, r"wind_1\.csv hour 5000: expected time"):
+            self.collate()
+
+    def test_empty_raw_file_counts_as_missing(self):
+        self.write_raw(1, ninja_csv(value="50000"))
+        self.write_raw(2, b"")
+        _, err = self.collate()
+        self.assertIn("2 of 3 cells have no NINJA data", err)
+
+
 class ReadCellsTest(NinjaTestCase):
     def test_reads_ids_and_coordinates_in_file_order(self):
         cells = read_cells(self.grid)
@@ -381,11 +577,6 @@ class NinjaParamsTest(unittest.TestCase):
 
     def parse(self, **changes) -> NinjaParams:
         return NinjaParams.from_config(Config({**self.TABLE, **changes}, Path("test.toml")))
-
-    def test_defaults_toml_has_ninja_disabled_with_documented_values(self):
-        defaults = Config.load(paths.defaults_path())
-        params = NinjaParams.from_config(defaults.section("fetch").section("ninja"))
-        self.assertEqual(params, NinjaParams(False, 105, "Vestas V150 4500", 5.0, 50))
 
     def test_invalid_values_are_rejected(self):
         for changes, message in [

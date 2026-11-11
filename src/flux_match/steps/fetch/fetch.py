@@ -1,6 +1,6 @@
-"""Step 1: download raw input data into data/coders/.
+"""Step 1: download raw input data
 
-Skipped for any file already present. Writes to the shared data folder rather than a run
+Skipped for any file already present. Writes to the shared data/ folder rather than a run
 folder, so downloads are reused across runs.
 
 Source-specific download logic lives in sibling modules (fetch_coders.py, and fetch_ninja.py).
@@ -23,9 +23,15 @@ demand year (see balancing_area_demand.py). Unlike the downloads, it uses every 
 demand file in data/coders/, not only the configured demand_years, and every year found must
 have all provinces. It is rebuilt when missing or older than any of those files.
 
-Finally, for each configured demand year it derives data/balancing_area_demand_hourly_<year>.csv,
+Then, for each configured demand year it derives data/balancing_area_demand_hourly_<year>.csv,
 the hourly demand per balancing area that the dispatch step uses. Each is rebuilt when missing or
 older than any of that year's provincial demand files.
+
+Finally, if fetch.ninja.enabled, it downloads per-cell wind output from renewables.ninja into
+data/ninja/raw/ and collates it into data/ninja/wind_capacity_factor_<year>.csv (see
+fetch_ninja.py). Cells not downloaded yet are filled with 0, so the collated file is written even
+when the download stopped early at NINJA's rate limit; the run then still fails. Nothing else
+reads that file yet.
 """
 
 import csv
@@ -44,7 +50,7 @@ from flux_match.balancing_area_demand import (
     write_hourly_ba_demand,
 )
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError, report_data_error
+from flux_match.errors import ConfigError, DataError, FetchIncompleteError, report_data_error
 from flux_match.grid_cell_rankings import write_grid_cell_rankings
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -116,16 +122,19 @@ def run(
     _write_balancing_area_demand(data_dir, params.demand_years)
     if ninja.enabled:
         # Last, because it can stop early at NINJA's rate limit and fail the run; everything
-        # above is already in place when it does.
+        # above is already in place when it does. The partial download is collated first.
         (year,) = params.capacity_factor_years
-        fetch_ninja.download(
-            ninja,
-            year,
-            csv_path(data_dir, GRID_CELL_TABLE),
-            ninja_dir,
-            environ=environ,
-            opener=opener,
-        )
+        grid_cell_info = csv_path(data_dir, GRID_CELL_TABLE)
+        stopped = None
+        try:
+            fetch_ninja.download(
+                ninja, year, grid_cell_info, ninja_dir, environ=environ, opener=opener
+            )
+        except FetchIncompleteError as e:
+            stopped = e  # still collate what was downloaded, then fail the run
+        fetch_ninja.collate(ninja, year, grid_cell_info, ninja_dir)
+        if stopped:
+            raise stopped
 
 
 def _write_rankings(params: FetchParams, data_dir: Path) -> None:

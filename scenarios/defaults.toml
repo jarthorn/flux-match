@@ -18,8 +18,8 @@ enabled = false
 # Turbine used for every cell. Raw files are kept per model, height and year.
 turbine_height = 105
 turbine_model = "Vestas V150 4500"
-# Seconds to wait between requests. NINJA allows 1 request per second.
-request_sleep_s = 5
+# Seconds to wait between requests. NINJA allows 1 request per second. A value of 72 should enable full runs without timeout.
+request_sleep_s = 73
 # Stop once this many requests were sent in the last hour, counting earlier runs (NINJA allows 50).
 max_requests_per_hour = 50
 

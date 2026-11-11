@@ -18,7 +18,7 @@ from test_balancing_area_demand import write_demand_files
 from flux_match import paths
 from flux_match.balancing_area_demand import PROVINCE_BA_POPULATION
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError
+from flux_match.errors import ConfigError, DataError, FetchIncompleteError
 from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
     FetchParams,
@@ -337,9 +337,13 @@ class FetchTest(unittest.TestCase):
 
     def test_ninja_download_runs_last_and_only_when_enabled(self):
         ninja_dir = self.data_dir.parent / "ninja"
-        with mock.patch("flux_match.steps.fetch.fetch_ninja.download") as download:
+        with (
+            mock.patch("flux_match.steps.fetch.fetch_ninja.download") as download,
+            mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
+        ):
             self._run(RecordingOpener(responses()))
             download.assert_not_called()
+            collate.assert_not_called()
 
             opener = RecordingOpener(responses())
             stdout = StringIO()
@@ -354,7 +358,48 @@ class FetchTest(unittest.TestCase):
         download.assert_called_once()
         args, kwargs = download.call_args
         self.assertEqual(args[1:], (2021, self.data_dir / "grid_cell_info.csv", ninja_dir))
+        collate.assert_called_once_with(
+            args[0], 2021, self.data_dir / "grid_cell_info.csv", ninja_dir
+        )
         self.assertTrue(self.rankings.is_file())  # CODERS derivations finished before NINJA
+
+    def test_ninja_partial_download_is_collated_before_the_run_fails(self):
+        ninja_dir = self.data_dir.parent / "ninja"
+        stopped = FetchIncompleteError("rate limit")
+        with (
+            mock.patch("flux_match.steps.fetch.fetch_ninja.download", side_effect=stopped),
+            mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
+            redirect_stdout(StringIO()),
+            self.assertRaises(FetchIncompleteError) as caught,
+        ):
+            run(
+                fetch_config(ninja_enabled=True),
+                self.data_dir,
+                ninja_dir=ninja_dir,
+                environ={API_KEY_ENV: SECRET},
+                opener=RecordingOpener(responses()),
+            )
+        self.assertIs(caught.exception, stopped)
+        collate.assert_called_once()
+
+    def test_ninja_errors_other_than_the_rate_limit_skip_collation(self):
+        ninja_dir = self.data_dir.parent / "ninja"
+        with (
+            mock.patch(
+                "flux_match.steps.fetch.fetch_ninja.download", side_effect=DataError("bad token")
+            ),
+            mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
+            redirect_stdout(StringIO()),
+            self.assertRaisesRegex(DataError, "bad token"),
+        ):
+            run(
+                fetch_config(ninja_enabled=True),
+                self.data_dir,
+                ninja_dir=ninja_dir,
+                environ={API_KEY_ENV: SECRET},
+                opener=RecordingOpener(responses()),
+            )
+        collate.assert_not_called()
 
     def test_exactly_one_capacity_factor_year_required(self):
         with self.assertRaisesRegex(ConfigError, "must have exactly one year"):

@@ -28,7 +28,7 @@ from flux_match.grid_cell_rankings import (
     read_grid_cells,
     read_locations,
 )
-from flux_match.paths import CODERS_DATA_DIR, OUTPUT_DIR, TIMESTAMP_FORMAT
+from flux_match.paths import CODERS_DATA_DIR, NINJA_DATA_DIR, OUTPUT_DIR, TIMESTAMP_FORMAT
 from flux_match.schema import HOURS_PER_YEAR
 
 HOURS_PER_DAY = 24
@@ -164,7 +164,7 @@ def check_spacing(longitudes: Sequence[float], latitudes: Sequence[float]) -> No
 
 
 def capacity_factor_path(generation_type: str, year: int) -> Path:
-    return CODERS_DATA_DIR / f"{generation_type}_capacity_factor_{year}.csv"
+    return NINJA_DATA_DIR / f"{generation_type}_capacity_factor_{year}.csv"
 
 
 def load_frames(path: Path, cells: Sequence[str]) -> np.ndarray:
