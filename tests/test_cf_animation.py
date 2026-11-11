@@ -5,10 +5,12 @@ import unittest
 import numpy as np
 
 from flux_match.errors import DataError
+from flux_match.paths import CODERS_DATA_DIR, NINJA_DATA_DIR
 from flux_match.viz.cf_animation import (
     COLOR_BOOST,
     GENERATION_TYPES,
     MONTH_NAMES,
+    capacity_factor_path,
     cell_polygons,
     check_spacing,
     color_scale_max,
@@ -58,6 +60,31 @@ class SpacingTest(unittest.TestCase):
             check_spacing([0.0, 1.25], [10.0, 10.5])
         with self.assertRaisesRegex(DataError, "latitude spacing"):
             check_spacing([0.0, 0.625], [10.0, 11.0])
+
+
+class CapacityFactorPathTest(unittest.TestCase):
+    def test_wind_defaults_to_coders(self):
+        self.assertEqual(
+            capacity_factor_path("wind", 2021),
+            CODERS_DATA_DIR / "wind_capacity_factor_2021.csv",
+        )
+
+    def test_wind_ninja_uses_ninja_dir(self):
+        self.assertEqual(
+            capacity_factor_path("wind", 2021, wind_source="ninja"),
+            NINJA_DATA_DIR / "wind_capacity_factor_2021.csv",
+        )
+
+    def test_solar_always_uses_coders(self):
+        for wind_source in ("coders", "ninja"):
+            self.assertEqual(
+                capacity_factor_path("solar", 2021, wind_source=wind_source),
+                CODERS_DATA_DIR / "solar_capacity_factor_2021.csv",
+            )
+
+    def test_invalid_wind_source_fails(self):
+        with self.assertRaisesRegex(ValueError, "wind_source must be one of"):
+            capacity_factor_path("wind", 2021, wind_source="nrel")
 
 
 class QuantizeTest(unittest.TestCase):

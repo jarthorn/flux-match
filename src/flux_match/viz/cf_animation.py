@@ -1,11 +1,15 @@
 """Animated map of one year of hourly capacity factors, as one self-contained HTML file.
 
-    uv run --group viz python -m flux_match.viz.cf_animation --type wind|solar [--year Y]
+    uv run --group viz python -m flux_match.viz.cf_animation --type wind|solar [--year Y] \\
+        [--wind-source coders|ninja]
 
 Each grid cell is drawn as a rectangle on a Plotly map of Canada, coloured from pale blue (low)
 to deep red (capacity factor 1.0). All 8760 hours are embedded once as gzipped, base64-encoded
 `uint8` values (capacity factor * 255, rounded), and a small inline JS player restyles the
 map's single choropleth trace for the current hour. See docs/cf-animation.md.
+
+For `--type wind`, `--wind-source` chooses whether `wind_capacity_factor_<year>.csv` is read from
+CODERS (`data/coders/`) or renewables.ninja (`data/ninja/`). Solar always comes from CODERS.
 """
 
 import argparse
@@ -28,11 +32,12 @@ from flux_match.grid_cell_rankings import (
     read_grid_cells,
     read_locations,
 )
-from flux_match.paths import CODERS_DATA_DIR, OUTPUT_DIR, TIMESTAMP_FORMAT
+from flux_match.paths import CODERS_DATA_DIR, NINJA_DATA_DIR, OUTPUT_DIR, TIMESTAMP_FORMAT
 from flux_match.schema import HOURS_PER_YEAR
 
 HOURS_PER_DAY = 24
 GENERATION_TYPES = ("wind", "solar")
+WIND_SOURCES = ("coders", "ninja")
 
 # Default to 2021 as the most recent year in the CODERS dataset.
 DEFAULT_YEAR = 2021
@@ -163,8 +168,18 @@ def check_spacing(longitudes: Sequence[float], latitudes: Sequence[float]) -> No
             )
 
 
-def capacity_factor_path(generation_type: str, year: int) -> Path:
-    return CODERS_DATA_DIR / f"{generation_type}_capacity_factor_{year}.csv"
+def capacity_factor_path(generation_type: str, year: int, wind_source: str = "coders") -> Path:
+    """Path to the hourly capacity-factor CSV for `generation_type` and `year`.
+
+    Solar always comes from CODERS. Wind comes from CODERS or NINJA according to `wind_source`.
+    """
+    if wind_source not in WIND_SOURCES:
+        raise ValueError(f"wind_source must be one of {list(WIND_SOURCES)}, got {wind_source!r}")
+    if generation_type == "wind" and wind_source == "ninja":
+        data_dir = NINJA_DATA_DIR
+    else:
+        data_dir = CODERS_DATA_DIR
+    return data_dir / f"{generation_type}_capacity_factor_{year}.csv"
 
 
 def load_frames(path: Path, cells: Sequence[str]) -> np.ndarray:
@@ -458,7 +473,9 @@ def output_path(generation_type: str, now: datetime) -> Path:
     return OUTPUT_DIR / f"cf-animation-{generation_type}-{now.strftime(TIMESTAMP_FORMAT)}.html"
 
 
-def build_animation(generation_type: str, year: int, dest: Path) -> None:
+def build_animation(
+    generation_type: str, year: int, dest: Path, wind_source: str = "coders"
+) -> None:
     cells, areas = read_grid_cells(CODERS_DATA_DIR / "grid_cell_info.csv")
     locations = read_locations(CODERS_DATA_DIR / "grid_cell_info.csv")
     latitudes = [locations[c][0] for c in cells]
@@ -466,8 +483,9 @@ def build_animation(generation_type: str, year: int, dest: Path) -> None:
     check_spacing(longitudes, latitudes)
     geojson = cell_polygons(cells, longitudes, latitudes)
 
-    print(f"Reading {generation_type} capacity factors for {year}...")
-    frames = load_frames(capacity_factor_path(generation_type, year), cells)
+    cf_path = capacity_factor_path(generation_type, year, wind_source)
+    print(f"Reading {generation_type} capacity factors for {year} from {cf_path}...")
+    frames = load_frames(cf_path, cells)
 
     title = f"Hourly {generation_type} capacity factor, {year}"
     fig = build_figure(geojson, cells, areas, frames[0], title, color_scale_max(generation_type))
@@ -483,11 +501,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--year", type=int, default=DEFAULT_YEAR, help="capacity-factor year (default: %(default)s)"
     )
+    parser.add_argument(
+        "--wind-source",
+        choices=WIND_SOURCES,
+        default="coders",
+        help="for --type wind: which data folder supplies wind_capacity_factor_<year>.csv "
+        "(default: %(default)s)",
+    )
     parser.add_argument("--out", type=Path, help="output HTML file (default: under output/)")
     args = parser.parse_args(argv)
     try:
         dest = args.out or output_path(args.generation_type, datetime.now())
-        build_animation(args.generation_type, args.year, dest)
+        build_animation(args.generation_type, args.year, dest, wind_source=args.wind_source)
     except FluxMatchError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
