@@ -17,9 +17,13 @@ SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 DEFAULTS_NAME = "defaults.toml"
 
 BA_DEMAND_FILENAME = "balancing_area_demand.csv"
-RANKINGS_FILENAME = "grid_cell_rankings.csv"
 
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
+
+
+def rankings_filename(wind_source: str) -> str:
+    """Rankings depend on where the wind capacity factors came from, so each source has its own."""
+    return f"grid_cell_rankings_{wind_source}.csv"
 
 
 def ba_demand_hourly_filename(year: int) -> str:

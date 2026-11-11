@@ -127,7 +127,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(handler=_cmd_all)
 
-    p = commands.add_parser("fetch", help="step 1: download CODERS data into data/coders/")
+    p = commands.add_parser(
+        "fetch",
+        help="step 1: download CODERS data into data/coders/ (and optionally data/ninja)",
+    )
     add_scenario(p)
     add_config(p)
     p.set_defaults(handler=_cmd_fetch)

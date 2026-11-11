@@ -1,9 +1,9 @@
 """Per-cell summaries and per-balancing-area rankings of wind and solar capacity factors.
 
-Builds `grid_cell_rankings.csv`, one row per grid cell in grid_cell_info.csv, from the hourly
-capacity-factor tables. Those tables have one row per hour (column `h`) and one column per grid
-cell, and are hundreds of MB, so they are streamed one row at a time. Only the per-cell totals
-and per-day sums (365 values per cell) are kept in memory.
+Builds `grid_cell_rankings_<wind source>.csv`, one row per grid cell in grid_cell_info.csv, from
+the hourly capacity-factor tables. Those tables have one row per hour (column `h`) and one column
+per grid cell, and are hundreds of MB, so they are streamed one row at a time. Only the per-cell
+totals and per-day sums (365 values per cell) are kept in memory.
 
 Daily capacity is the sum of a day's 24 hourly capacity factors, so it ranges from 0 to 24 and
 is in the same units as the annual sum. Day `d` is hours 24*(d-1)+1 to 24*d of the 8760-hour year.
@@ -255,7 +255,7 @@ def read_grid_cells(path: Path) -> tuple[list[str], list[str]]:
 
 @dataclass(frozen=True)
 class RankedCell:
-    """One grid cell joined from grid_cell_info.csv and grid_cell_rankings.csv."""
+    """One grid cell joined from grid_cell_info.csv and a rankings file."""
 
     grid_cell: int
     latitude: float

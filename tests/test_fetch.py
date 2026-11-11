@@ -25,6 +25,7 @@ from flux_match.steps.fetch.fetch import (
     _write_balancing_area_demand,
     csv_path,
     run,
+    wind_capacity_factor_path,
 )
 from flux_match.steps.fetch.fetch_coders import API_KEY_ENV, downloads
 
@@ -53,7 +54,7 @@ def fetch_config(
     provinces: list[str] | None = None,
     demand_years: list[int] | None = None,
     capacity_factor_years: list[int] | None = None,
-    ninja_enabled: bool = False,
+    wind_source: str = "coders",
 ) -> Config:
     return config(
         {
@@ -61,8 +62,8 @@ def fetch_config(
                 "provinces": provinces or ["ON"],
                 "demand_years": demand_years or [2024],
                 "capacity_factor_years": capacity_factor_years or [2021],
+                "wind_source": wind_source,
                 "ninja": {
-                    "enabled": ninja_enabled,
                     "turbine_height": 105,
                     "turbine_model": "Vestas V150 4500",
                     "request_sleep_s": 5,
@@ -168,7 +169,8 @@ class FetchTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.data_dir = Path(tmp.name) / "coders"
-        self.rankings = Path(tmp.name) / "grid_cell_rankings.csv"
+        self.rankings = Path(tmp.name) / paths.rankings_filename("coders")
+        self.ninja_rankings = Path(tmp.name) / paths.rankings_filename("ninja")
         self.dotenv = Path(tmp.name) / ".env"
         # These tests cache only ON demand; balancing_area_demand needs every province and is
         # covered by BalancingAreaDemandStepTest and test_balancing_area_demand.py.
@@ -335,71 +337,96 @@ class FetchTest(unittest.TestCase):
         self._run(RecordingOpener(responses()))
         self.ba_demand_step.assert_called_once_with(self.data_dir, (2024,))
 
-    def test_ninja_download_runs_last_and_only_when_enabled(self):
-        ninja_dir = self.data_dir.parent / "ninja"
+    def _run_ninja(self, **download_kwargs) -> RecordingOpener:
+        """Run fetch with wind_source "ninja". NINJA's download and collation are mocked (they
+        are covered by test_fetch_ninja.py), with a collated table already in place; the mocks
+        are kept as self.download and self.collate. A download that returns normally means
+        every cell was downloaded. `download_kwargs` configures the download mock, e.g.
+        side_effect."""
+        self.ninja_dir = self.data_dir.parent / "ninja"
+        self.ninja_dir.mkdir(exist_ok=True)
+        (self.ninja_dir / "wind_capacity_factor_2021.csv").write_bytes(
+            capacity_factor_csv(HOURS_PER_YEAR, "0.4")
+        )
+        target = "flux_match.steps.fetch.fetch_ninja"
+        opener = RecordingOpener(responses())
+        with (
+            mock.patch(f"{target}.download", **download_kwargs) as self.download,
+            mock.patch(f"{target}.collate") as self.collate,
+            redirect_stdout(StringIO()),
+        ):
+            run(
+                fetch_config(wind_source="ninja"),
+                self.data_dir,
+                ninja_dir=self.ninja_dir,
+                environ={API_KEY_ENV: SECRET},
+                opener=opener,
+            )
+        return opener
+
+    def test_coders_wind_source_never_touches_ninja(self):
         with (
             mock.patch("flux_match.steps.fetch.fetch_ninja.download") as download,
             mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
         ):
             self._run(RecordingOpener(responses()))
-            download.assert_not_called()
-            collate.assert_not_called()
+        download.assert_not_called()
+        collate.assert_not_called()
+        self.assertTrue(self.rankings.is_file())
+        self.assertFalse(self.ninja_rankings.exists())
 
-            opener = RecordingOpener(responses())
-            stdout = StringIO()
-            with redirect_stdout(stdout):
-                run(
-                    fetch_config(ninja_enabled=True),
-                    self.data_dir,
-                    ninja_dir=ninja_dir,
-                    environ={API_KEY_ENV: SECRET},
-                    opener=opener,
-                )
-        download.assert_called_once()
-        args, kwargs = download.call_args
-        self.assertEqual(args[1:], (2021, self.data_dir / "grid_cell_info.csv", ninja_dir))
-        collate.assert_called_once_with(
-            args[0], 2021, self.data_dir / "grid_cell_info.csv", ninja_dir
-        )
-        self.assertTrue(self.rankings.is_file())  # CODERS derivations finished before NINJA
+    def test_ninja_wind_source_still_downloads_the_coders_wind_table_as_a_backup(self):
+        opener = self._run_ninja()
+        tables = [table for table, _ in opener.calls]
+        self.assertIn("solar_capacity_factor", tables)
+        self.assertIn("wind_capacity_factor", tables)
+        self.assertTrue((self.data_dir / "wind_capacity_factor_2021.csv").is_file())
 
-    def test_ninja_partial_download_is_collated_before_the_run_fails(self):
-        ninja_dir = self.data_dir.parent / "ninja"
+    def test_ninja_rankings_are_built_from_the_complete_ninja_table(self):
+        self._run_ninja()
+        grid_cell_info = self.data_dir / "grid_cell_info.csv"
+        self.download.assert_called_once()
+        args = self.download.call_args.args
+        self.assertEqual(args[1:], (2021, grid_cell_info, self.ninja_dir))
+        self.collate.assert_called_once_with(args[0], 2021, grid_cell_info, self.ninja_dir)
+        rows = read_rows(self.ninja_rankings)
+        self.assertAlmostEqual(float(rows[0]["annual_wind_capacity_factor"]), 0.4 * 8760)
+        self.assertAlmostEqual(float(rows[0]["annual_solar_capacity_factor"]), 0.2 * 8760)
+        # The CODERS rankings are a separate file, not built for this wind source.
+        self.assertFalse(self.rankings.exists())
+
+    def test_ninja_partial_download_is_collated_but_no_rankings_exist_afterwards(self):
+        self.ninja_rankings.write_text("from an earlier, complete download\n")
         stopped = FetchIncompleteError("rate limit")
-        with (
-            mock.patch("flux_match.steps.fetch.fetch_ninja.download", side_effect=stopped),
-            mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
-            redirect_stdout(StringIO()),
-            self.assertRaises(FetchIncompleteError) as caught,
-        ):
-            run(
-                fetch_config(ninja_enabled=True),
-                self.data_dir,
-                ninja_dir=ninja_dir,
-                environ={API_KEY_ENV: SECRET},
-                opener=RecordingOpener(responses()),
-            )
+        with self.assertRaises(FetchIncompleteError) as caught:
+            self._run_ninja(side_effect=stopped)
         self.assertIs(caught.exception, stopped)
-        collate.assert_called_once()
+        self.collate.assert_called_once()
+        self.assertFalse(self.ninja_rankings.exists())
 
     def test_ninja_errors_other_than_the_rate_limit_skip_collation(self):
+        with self.assertRaisesRegex(DataError, "bad token"):
+            self._run_ninja(side_effect=DataError("bad token"))
+        self.collate.assert_not_called()
+        self.assertFalse(self.ninja_rankings.exists())
+
+    def test_invalid_wind_source_rejected(self):
+        with self.assertRaisesRegex(ConfigError, r"'fetch\.wind_source' must be one of"):
+            FetchParams.from_config(fetch_config(wind_source="nrel").section("fetch"))
+
+    def test_missing_wind_table_is_a_hard_failure_for_later_steps(self):
         ninja_dir = self.data_dir.parent / "ninja"
-        with (
-            mock.patch(
-                "flux_match.steps.fetch.fetch_ninja.download", side_effect=DataError("bad token")
-            ),
-            mock.patch("flux_match.steps.fetch.fetch_ninja.collate") as collate,
-            redirect_stdout(StringIO()),
-            self.assertRaisesRegex(DataError, "bad token"),
-        ):
-            run(
-                fetch_config(ninja_enabled=True),
-                self.data_dir,
-                ninja_dir=ninja_dir,
-                environ={API_KEY_ENV: SECRET},
-                opener=RecordingOpener(responses()),
-            )
-        collate.assert_not_called()
+        for source, folder in (("coders", self.data_dir), ("ninja", ninja_dir)):
+            with self.subTest(source=source):
+                fetch = fetch_config(wind_source=source).section("fetch")
+                with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
+                    wind_capacity_factor_path(fetch, self.data_dir, ninja_dir)
+                folder.mkdir(exist_ok=True)
+                (folder / "wind_capacity_factor_2021.csv").write_text("h,1\n")
+                self.assertEqual(
+                    wind_capacity_factor_path(fetch, self.data_dir, ninja_dir),
+                    folder / "wind_capacity_factor_2021.csv",
+                )
 
     def test_exactly_one_capacity_factor_year_required(self):
         with self.assertRaisesRegex(ConfigError, "must have exactly one year"):

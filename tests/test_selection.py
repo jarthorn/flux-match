@@ -1,9 +1,20 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
+from flux_match import paths
 from flux_match.errors import DataError
-from flux_match.steps.select.base import GenerationType, Site, read_sites, write_sites
+from flux_match.run_context import create_run
+from flux_match.steps import select
+from flux_match.steps.select.base import (
+    GenerationType,
+    Site,
+    rankings_path,
+    read_sites,
+    write_sites,
+)
 
 SOLAR = GenerationType.SOLAR
 WIND_ONS = GenerationType.WIND_ONSHORE
@@ -69,6 +80,37 @@ class SitesFileTest(unittest.TestCase):
         self.path.write_text("grid_cell,capacity_mw\n1,1\n")
         with self.assertRaisesRegex(DataError, "generation_type"):
             read_sites(self.path)
+
+
+class RankingsPathTest(unittest.TestCase):
+    """Each wind source has its own rankings file, which select needs fetch to have built."""
+
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        patcher = mock.patch.object(paths, "DATA_DIR", self.dir)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def ctx(self, wind_source: str):
+        scenario = self.dir / f"{wind_source}.toml"
+        scenario.write_text(
+            f'[fetch]\nwind_source = "{wind_source}"\n[selection]\nstrategy = "greedy"\n'
+        )
+        return create_run(scenario, self.dir / "output", datetime(2026, 11, 11, 9, 0))
+
+    def test_uses_the_rankings_of_the_configured_wind_source(self) -> None:
+        for source in ("coders", "ninja"):
+            (self.dir / f"grid_cell_rankings_{source}.csv").write_text("grid_cell\n")
+            self.assertEqual(
+                rankings_path(self.ctx(source)), self.dir / f"grid_cell_rankings_{source}.csv"
+            )
+
+    def test_missing_rankings_for_the_source_fail_even_if_another_source_has_them(self) -> None:
+        (self.dir / "grid_cell_rankings_coders.csv").write_text("grid_cell\n")
+        with self.assertRaisesRegex(DataError, r"grid_cell_rankings_ninja\.csv not found"):
+            select.run(self.ctx("ninja"))
 
 
 if __name__ == "__main__":

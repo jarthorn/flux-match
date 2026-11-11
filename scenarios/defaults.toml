@@ -10,11 +10,13 @@ provinces = ["AB", "BC", "MB", "NB", "NL", "NS", "ON", "PE", "QC", "SK"]
 demand_years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
 # Wind/solar capacity-factor tables are published per year; CODERS currently has 2021.
 capacity_factor_years = [2025]
+# Where the wind capacity factors come from: "coders" (CODERS) or "ninja" (renewables.ninja).
+wind_source = "coders"
 
 [fetch.ninja]
-# Also download hourly wind output for every grid cell from renewables.ninja into data/ninja/
-# (one request per cell, so a full download takes many hours; reruns resume where they stopped).
-enabled = false
+# Settings for wind_source = "ninja", which downloads hourly wind output for every grid cell from
+# renewables.ninja into data/ninja/ (one request per cell, so a full download takes many hours;
+# reruns resume where they stopped).
 # Turbine used for every cell. Raw files are kept per model, height and year.
 turbine_height = 105
 turbine_model = "Vestas V150 4500"

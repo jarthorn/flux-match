@@ -29,7 +29,13 @@ from flux_match.errors import ConfigError, DataError
 from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_cells_by_ba
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, FetchParams, csv_path
+from flux_match.steps.fetch.fetch import (
+    GRID_CELL_TABLE,
+    SOLAR_CF_TABLE,
+    FetchParams,
+    csv_path,
+    wind_capacity_factor_path,
+)
 from flux_match.steps.select.base import (
     SELECTED_TYPES,
     Allocation,
@@ -39,6 +45,7 @@ from flux_match.steps.select.base import (
     Strategy,
     allocate_in_order,
     plan_allocations,
+    rankings_path,
 )
 from flux_match.steps.select.total_variation import (
     total_variation,
@@ -46,10 +53,6 @@ from flux_match.steps.select.total_variation import (
 )
 
 ANNUAL_RANK_FIELDS = ("ba_annual_wind_rank", "ba_annual_solar_rank")
-CAPACITY_FACTOR_TABLES = {
-    GenerationType.WIND_ONSHORE: "wind_capacity_factor",
-    GenerationType.SOLAR: "solar_capacity_factor",
-}
 
 
 class TvciStrategy(Strategy):
@@ -58,14 +61,16 @@ class TvciStrategy(Strategy):
         self.candidate_multiple = _candidate_multiple(params.section("tvci"))
 
     def select(self, ctx: RunContext) -> list[Site]:
-        (year,) = FetchParams.from_config(ctx.config.section("fetch")).capacity_factor_years
+        fetch_config = ctx.config.section("fetch")
+        (year,) = FetchParams.from_config(fetch_config).capacity_factor_years
         return select_sites(
             demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
-            rankings_path=paths.DATA_DIR / paths.RANKINGS_FILENAME,
+            rankings_path=rankings_path(ctx),
             grid_cell_info=csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE),
             capacity_factor_paths={
-                generation_type: csv_path(paths.CODERS_DATA_DIR, table, year=year)
-                for generation_type, table in CAPACITY_FACTOR_TABLES.items()
+                # Onshore and offshore wind share one table, from fetch.wind_source.
+                GenerationType.WIND_ONSHORE: wind_capacity_factor_path(fetch_config),
+                GenerationType.SOLAR: csv_path(paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year),
             },
             capacity=self.capacity,
             candidate_multiple=self.candidate_multiple,

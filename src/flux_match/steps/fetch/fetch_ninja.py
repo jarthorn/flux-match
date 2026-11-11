@@ -19,7 +19,8 @@ collate() then combines the raw files into `data/ninja/wind_capacity_factor_<yea
 like CODERS' wind_capacity_factor table: an `h` column (hour 1-8760) and one column per grid cell,
 in grid_cell_info order, holding the capacity factor (electricity / CAPACITY_KW). February 29 is
 dropped in leap years. Cells without a raw file yet are filled with 0 and counted in a warning,
-so the file can be used before the download completes; it is rebuilt when a raw file is newer.
+so a partial download can be inspected; it is rebuilt when a raw file is newer. fetch.py only
+derives anything from it once the download is complete.
 The file is far too big to build in memory, so it is written CHUNK_ROWS hours at a time, reading
 only that slice of each raw file.
 """
@@ -76,7 +77,6 @@ Opener = Callable[..., Any]
 
 @dataclass(frozen=True)
 class NinjaParams:
-    enabled: bool
     turbine_height: int
     turbine_model: str
     request_sleep_s: float
@@ -85,7 +85,6 @@ class NinjaParams:
     @classmethod
     def from_config(cls, params: Config) -> Self:
         parsed = cls(
-            enabled=params.get("enabled", bool),
             turbine_height=params.get("turbine_height", int),
             turbine_model=params.get("turbine_model", str).strip(),
             request_sleep_s=params.get("request_sleep_s", float),

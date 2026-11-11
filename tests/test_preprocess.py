@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 
 from flux_match.errors import DataError
@@ -185,34 +187,68 @@ class WriteVreHourlyTest(TempDirTest):
 
 
 class PreprocessRunTest(TempDirTest):
-    def test_run_uses_configured_capacity_factor_year(self) -> None:
-        data_dir = self.dir / "coders"
-        data_dir.mkdir()
-        (data_dir / "grid_cell_info.csv").write_text(GRID_HEADER + "1,East.a\n")
-        (data_dir / "wind_capacity_factor_2021.csv").write_text(hourly_csv({"1": [0.5, 0.0, 0.0]}))
-        (data_dir / "solar_capacity_factor_2021.csv").write_text(
+    def setUp(self) -> None:
+        super().setUp()
+        self.data_dir = self.dir / "coders"
+        self.data_dir.mkdir()
+        self.ninja_dir = self.dir / "ninja"
+        (self.data_dir / "grid_cell_info.csv").write_text(GRID_HEADER + "1,East.a\n")
+        (self.data_dir / "wind_capacity_factor_2021.csv").write_text(
+            hourly_csv({"1": [0.5, 0.0, 0.0]})
+        )
+        (self.data_dir / "solar_capacity_factor_2021.csv").write_text(
             hourly_csv({"1": [0.25, 0.0, 0.0]})
         )
-        scenario = self.write(
-            "default.toml",
-            "\n".join(
-                [
-                    "[fetch]",
-                    'provinces = ["ON"]',
-                    "demand_years = [2024]",
-                    "capacity_factor_years = [2021]",
-                ]
-            )
-            + "\n",
-        )
+
+    def make_ctx(self, wind_source: str | None = None):
+        lines = [
+            "[fetch]",
+            'provinces = ["ON"]',
+            "demand_years = [2024]",
+            "capacity_factor_years = [2021]",
+        ]
+        if wind_source:
+            lines.append(f'wind_source = "{wind_source}"')
+        scenario = self.write("default.toml", "\n".join(lines) + "\n")
         ctx = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 19, 51))
         write_sites(ctx.selected_sites_path, [Site(1, WIND_ONS, 10.0), Site(1, SOLAR, 8.0)])
-        run(ctx, data_dir=data_dir, hours_in_year=HOURS)
+        return ctx
+
+    def run_step(self, ctx) -> None:
+        with redirect_stdout(StringIO()):
+            run(ctx, data_dir=self.data_dir, ninja_dir=self.ninja_dir, hours_in_year=HOURS)
+
+    def test_run_uses_configured_capacity_factor_year(self) -> None:
+        ctx = self.make_ctx()
+        self.run_step(ctx)
         rows = read_csv(ctx.vre_hourly_path, VRE_HOURLY_COLUMNS)
         self.assertEqual(len(rows), HOURS)
         self.assertEqual(float(rows[0]["wind_mw"]), 5.0)
         self.assertEqual(float(rows[0]["solar_mw"]), 2.0)
         self.assertEqual(float(rows[0]["variable_generation_mw"]), 7.0)
+
+    def test_ninja_wind_source_uses_the_ninja_table_and_coders_solar(self) -> None:
+        self.ninja_dir.mkdir()
+        (self.ninja_dir / "wind_capacity_factor_2021.csv").write_text(
+            hourly_csv({"1": [0.1, 0.0, 0.0]})
+        )
+        ctx = self.make_ctx("ninja")
+        self.run_step(ctx)
+        rows = read_csv(ctx.vre_hourly_path, VRE_HOURLY_COLUMNS)
+        self.assertEqual(float(rows[0]["wind_mw"]), 1.0)  # 10 MW * 0.1, not CODERS' 0.5
+        self.assertEqual(float(rows[0]["solar_mw"]), 2.0)
+
+    def test_ninja_wind_source_fails_without_a_ninja_table(self) -> None:
+        # The CODERS wind table is there, but must not be used as a fallback.
+        ctx = self.make_ctx("ninja")
+        with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
+            self.run_step(ctx)
+        self.assertFalse(ctx.vre_hourly_path.exists())
+
+    def test_missing_wind_table_fails_instead_of_using_another_source(self) -> None:
+        (self.data_dir / "wind_capacity_factor_2021.csv").unlink()
+        with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
+            self.run_step(self.make_ctx("coders"))
 
 
 if __name__ == "__main__":

@@ -2,8 +2,9 @@
 
 Joins selected_sites.csv with grid_cell_info balancing areas, multiplies each site's
 nameplate by its hourly capacity factor, and sums those MW values within each balancing
-area. Onshore and offshore wind both use the wind capacity-factor table; solar uses the
-solar table. The year is fetch.capacity_factor_years (exactly one).
+area. Onshore and offshore wind both use the wind capacity-factor table of fetch.wind_source
+(CODERS or renewables.ninja); solar always uses the CODERS solar table.
+The year is fetch.capacity_factor_years (exactly one).
 
 Writes vre_by_ba_hourly.csv: one row per balancing area per hour (1-8760), with wind_mw,
 solar_mw, and variable_generation_mw (their sum). Values are rounded to whole MW, the precision
@@ -25,7 +26,13 @@ from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_gri
 from flux_match.io import write_csv_atomic
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR, VRE_HOURLY_COLUMNS
-from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, FetchParams, csv_path
+from flux_match.steps.fetch.fetch import (
+    GRID_CELL_TABLE,
+    SOLAR_CF_TABLE,
+    FetchParams,
+    csv_path,
+    wind_capacity_factor_path,
+)
 from flux_match.steps.select.base import GenerationType, Site, read_sites
 
 WIND_TYPES = frozenset({GenerationType.WIND_ONSHORE, GenerationType.WIND_OFFSHORE})
@@ -42,17 +49,22 @@ def run(
     ctx: RunContext,
     data_dir: Path = paths.CODERS_DATA_DIR,
     *,
+    ninja_dir: Path = paths.NINJA_DATA_DIR,
     hours_in_year: int = HOURS_PER_YEAR,
 ) -> None:
-    params = FetchParams.from_config(ctx.config.section("fetch"))
+    fetch_config = ctx.config.section("fetch")
+    params = FetchParams.from_config(fetch_config)
     (year,) = params.capacity_factor_years
+    # Wind comes from fetch.wind_source and fails if that source's table is missing; solar is
+    # always from CODERS.
+    wind_cf = wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
     dest = ctx.vre_hourly_path
-    print(f"writing {dest.name}", flush=True)
+    print(f"writing {dest.name} (wind source: {params.wind_source})", flush=True)
     write_vre_hourly(
         sites_path=ctx.selected_sites_path,
         grid_cell_info=csv_path(data_dir, GRID_CELL_TABLE),
-        wind_cf=csv_path(data_dir, "wind_capacity_factor", year=year),
-        solar_cf=csv_path(data_dir, "solar_capacity_factor", year=year),
+        wind_cf=wind_cf,
+        solar_cf=csv_path(data_dir, SOLAR_CF_TABLE, year=year),
         dest=dest,
         hours_in_year=hours_in_year,
     )

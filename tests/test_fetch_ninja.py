@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlparse
 
 from test_fetch import FakeResponse
 
-from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, FetchIncompleteError
 from flux_match.steps.fetch.fetch_ninja import (
@@ -36,7 +35,6 @@ HOUR = 3600
 START = 1_800_000_000.0  # arbitrary epoch time for the fake clock
 
 PARAMS = NinjaParams(
-    enabled=True,
     turbine_height=105,
     turbine_model="Vestas V150 4500",
     request_sleep_s=5,
@@ -197,7 +195,7 @@ class DownloadTest(NinjaTestCase):
         self.assertEqual(self.sleeps, [5, 5])
 
     def test_files_are_named_by_turbine_settings_and_year(self):
-        other = NinjaParams(True, 100, "Gamesa G114 2000", 5, 50)
+        other = NinjaParams(100, "Gamesa G114 2000", 5, 50)
         self.assertEqual(raw_dir(self.ninja_dir, other, 2024).name, "gamesa_g114_2000_100m_2024")
         self.assertEqual(raw_dir(self.ninja_dir, other, 2024).parent, self.ninja_dir / "raw")
 
@@ -267,7 +265,7 @@ class DownloadTest(NinjaTestCase):
 
 class RateLimitTest(NinjaTestCase):
     def limited(self, max_requests: int) -> NinjaParams:
-        return NinjaParams(True, 105, "Vestas V150 4500", 5, max_requests)
+        return NinjaParams(105, "Vestas V150 4500", 5, max_requests)
 
     def test_stops_at_the_hourly_cap_with_a_clear_message(self):
         self.write_grid(5)
@@ -568,7 +566,6 @@ class ReadCellsTest(NinjaTestCase):
 
 class NinjaParamsTest(unittest.TestCase):
     TABLE = {
-        "enabled": True,
         "turbine_height": 105,
         "turbine_model": "Vestas V150 4500",
         "request_sleep_s": 5,
@@ -584,7 +581,7 @@ class NinjaParamsTest(unittest.TestCase):
             ({"turbine_model": " !! "}, "'turbine_model' must contain letters or digits"),
             ({"request_sleep_s": 0.5}, "'request_sleep_s' must be at least 1"),
             ({"max_requests_per_hour": 0}, "'max_requests_per_hour' must be at least 1"),
-            ({"enabled": "yes"}, "must be bool"),
+            ({"turbine_height": "tall"}, "must be int"),
         ]:
             with self.subTest(changes=changes), self.assertRaisesRegex(ConfigError, message):
                 self.parse(**changes)

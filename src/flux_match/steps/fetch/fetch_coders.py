@@ -18,8 +18,9 @@ from urllib.request import Request, urlopen
 from flux_match.errors import DataError
 from flux_match.io import write_csv
 from flux_match.steps.fetch.fetch import (
-    CAPACITY_FACTOR_TABLES,
     GRID_CELL_TABLE,
+    SOLAR_CF_TABLE,
+    WIND_CF_TABLE,
     FetchParams,
     _already_present,
     _drop_leap_day,
@@ -85,8 +86,10 @@ def downloads(params: FetchParams) -> list[Download]:
                     fill_columns=("demand_MWh",),
                 )
             )
+    # Both tables are always downloaded, even when wind_source is "ninja": the CODERS wind
+    # table is a cheap backup for NINJA's, which takes days to download.
     for year in params.capacity_factor_years:
-        for table in CAPACITY_FACTOR_TABLES:
+        for table in (SOLAR_CF_TABLE, WIND_CF_TABLE):
             items.append(Download(table, {"year": year}, hour_column="h"))
     return items
 

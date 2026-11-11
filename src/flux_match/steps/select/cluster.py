@@ -28,6 +28,7 @@ from flux_match.steps.select.base import (
     CapacityParams,
     Site,
     Strategy,
+    rankings_path,
     select_per_balancing_area,
 )
 from flux_match.steps.select.kmeans import GeoKMeans, GeoPoint
@@ -60,7 +61,7 @@ class ClusterStrategy(Strategy):
     def select(self, ctx: RunContext) -> list[Site]:
         return select_sites(
             demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
-            rankings_path=paths.DATA_DIR / paths.RANKINGS_FILENAME,
+            rankings_path=rankings_path(ctx),
             grid_cell_info=paths.CODERS_DATA_DIR / GRID_CELL_INFO,
             clusters_path=None if ctx.batch else ctx.clusters_path,
             capacity=self.capacity,

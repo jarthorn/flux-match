@@ -17,12 +17,13 @@ from flux_match.steps.select.base import (
     CapacityParams,
     Site,
     Strategy,
+    rankings_path,
     select_per_balancing_area,
 )
 
 GRID_CELL_INFO = "grid_cell_info.csv"
 
-# ranking_metric -> (wind rank column, solar rank column) in grid_cell_rankings.csv.
+# ranking_metric -> (wind rank column, solar rank column) in the rankings file.
 RANKING_METRICS = {
     "annual_capacity": ("ba_annual_wind_rank", "ba_annual_solar_rank"),
     "median_daily_capacity": ("ba_median_wind_rank", "ba_median_solar_rank"),
@@ -37,7 +38,7 @@ class GreedyStrategy(Strategy):
     def select(self, ctx: RunContext) -> list[Site]:
         return select_sites(
             demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
-            rankings_path=paths.DATA_DIR / paths.RANKINGS_FILENAME,
+            rankings_path=rankings_path(ctx),
             grid_cell_info=paths.CODERS_DATA_DIR / GRID_CELL_INFO,
             capacity=self.capacity,
             ranking_metric=self.ranking_metric,
