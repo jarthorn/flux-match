@@ -1,11 +1,11 @@
 """TVCI strategy: pick sites whose hourly output complements the sites already picked, by the
 Total Variation Complementarity Index.
 
-See docs/complementarity-approach.md. Each balancing area and generation type is handled on its
+See notes/tvci-approach.md. Each balancing area and generation type is handled on its
 own. With N = ceil(target / per-cell cap) sites needed, the candidates are the area's top
 ceil(candidate_multiple * N) cells by annual capacity factor rank. The best-ranked candidate is
 picked first. Each later pick is the remaining candidate with the highest Total Variation
-Complementarity Index (total_variation.py) against the mean hourly capacity factor of the cells
+Complementarity Index (total_variation.py) against the sum of hourly capacity factors of the cells
 picked so far; ties go to the better-ranked cell. Picking stops after N cells.
 
 Capacity is then placed as described in base.py, in pick order followed by the area's other
