@@ -132,18 +132,13 @@ class DispatchTotals:
         self.hours += 1
 
 
-def run(
-    ctx: RunContext,
-    data_dir: Path = paths.DATA_DIR,
-    *,
-    hours_in_year: int = HOURS_PER_YEAR,
-) -> None:
+def run(ctx: RunContext, *, hours_in_year: int = HOURS_PER_YEAR) -> None:
     params = DispatchParams.from_config(ctx.config.section("dispatch"))
-    _, annual_demand = read_ba_demand(paths.ba_demand_path(data_dir))
+    _, annual_demand = read_ba_demand(paths.ba_demand_path())
     batteries = size_batteries(annual_demand, params.bess_capacity_ratio, params.bess_duration)
     totals: defaultdict[str, DispatchTotals] = defaultdict(DispatchTotals)
     for year in params.dispatch_years:
-        demand_path = paths.ba_demand_hourly_path(year, data_dir)
+        demand_path = paths.ba_demand_hourly_path(year)
         if not demand_path.is_file():
             raise DataError(
                 f"Hourly demand for {year} not found: {demand_path}. "

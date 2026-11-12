@@ -4,6 +4,7 @@ from contextlib import redirect_stdout
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from flux_match import paths
 from flux_match.errors import DataError, FluxMatchError
@@ -345,10 +346,12 @@ class LoadDashboardTablesTest(TempDirTest):
     def test_requires_matching_files_for_the_dispatch_year(self) -> None:
         scenario = self.write("default.toml", SCENARIO)
         ctx = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 21, 47))
-        data = self.dir / "data"
-        data.mkdir()
+        patcher = mock.patch.object(paths, "DATA_DIR", self.dir / "data")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        paths.DATA_DIR.mkdir()
         write_csv(
-            data / "balancing_area_demand_hourly_2024.csv",
+            paths.ba_demand_hourly_path(2024),
             ("balancing_area", "hour", "demand_mw"),
             hourly_rows({"East.a": {"demand_mw": [100, 110, 120]}}),
         )
@@ -365,7 +368,7 @@ class LoadDashboardTablesTest(TempDirTest):
                 year=2024,
             ),
         )
-        demand, vre, dispatch = load_dashboard_tables(ctx, 2024, data, hours_in_year=HOURS)
+        demand, vre, dispatch = load_dashboard_tables(ctx, 2024, hours_in_year=HOURS)
         self.assertEqual(values(demand, "East.a", "demand_mw"), (100, 110, 120))
         self.assertEqual(values(vre, "East.a", "solar_mw"), (0, 1, 2))
         self.assertEqual(values(dispatch, "East.a", "net_demand_mw"), (90, 98, 105))

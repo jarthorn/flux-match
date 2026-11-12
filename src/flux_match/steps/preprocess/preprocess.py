@@ -39,26 +39,20 @@ class LocatedSite:
     capacity_mw: float
 
 
-def run(
-    ctx: RunContext,
-    data_dir: Path = paths.CODERS_DATA_DIR,
-    *,
-    ninja_dir: Path = paths.NINJA_DATA_DIR,
-    hours_in_year: int = HOURS_PER_YEAR,
-) -> None:
+def run(ctx: RunContext, *, hours_in_year: int = HOURS_PER_YEAR) -> None:
     fetch_config = ctx.config.section("fetch")
     params = FetchParams.from_config(fetch_config)
     (year,) = params.capacity_factor_years
     # Wind comes from fetch.wind_source and fails if that source's table is missing; solar is
     # always from CODERS.
-    wind_cf = paths.wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
+    wind_cf = paths.wind_capacity_factor_path(fetch_config)
     dest = paths.vre_hourly_path(ctx)
     print(f"writing {dest.name} (wind source: {params.wind_source})", flush=True)
     write_vre_hourly(
         sites_path=paths.selected_sites_path(ctx),
-        grid_cell_info=paths.csv_path(data_dir, GRID_CELL_TABLE),
+        grid_cell_info=paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE),
         wind_cf=wind_cf,
-        solar_cf=paths.csv_path(data_dir, SOLAR_CF_TABLE, year=year),
+        solar_cf=paths.csv_path(paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year),
         dest=dest,
         hours_in_year=hours_in_year,
     )

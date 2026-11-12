@@ -26,13 +26,13 @@ from typing import Any
 
 import numpy as np
 
+from flux_match import paths
 from flux_match.errors import DataError, FluxMatchError
 from flux_match.grid_cell_rankings import (
     iter_hourly_capacity_factors,
     read_grid_cells,
     read_locations,
 )
-from flux_match.paths import CODERS_DATA_DIR, NINJA_DATA_DIR, OUTPUT_DIR, TIMESTAMP_FORMAT
 from flux_match.schema import HOURS_PER_YEAR
 
 HOURS_PER_DAY = 24
@@ -176,10 +176,10 @@ def capacity_factor_path(generation_type: str, year: int, wind_source: str = "co
     if wind_source not in WIND_SOURCES:
         raise ValueError(f"wind_source must be one of {list(WIND_SOURCES)}, got {wind_source!r}")
     if generation_type == "wind" and wind_source == "ninja":
-        data_dir = NINJA_DATA_DIR
+        directory = paths.NINJA_DATA_DIR
     else:
-        data_dir = CODERS_DATA_DIR
-    return data_dir / f"{generation_type}_capacity_factor_{year}.csv"
+        directory = paths.CODERS_DATA_DIR
+    return directory / f"{generation_type}_capacity_factor_{year}.csv"
 
 
 def load_frames(path: Path, cells: Sequence[str]) -> np.ndarray:
@@ -470,14 +470,16 @@ def render_page(fig: Any, frames: np.ndarray, title: str) -> str:
 
 
 def output_path(generation_type: str, now: datetime) -> Path:
-    return OUTPUT_DIR / f"cf-animation-{generation_type}-{now.strftime(TIMESTAMP_FORMAT)}.html"
+    return paths.OUTPUT_DIR / (
+        f"cf-animation-{generation_type}-{now.strftime(paths.TIMESTAMP_FORMAT)}.html"
+    )
 
 
 def build_animation(
     generation_type: str, year: int, dest: Path, wind_source: str = "coders"
 ) -> None:
-    cells, areas = read_grid_cells(CODERS_DATA_DIR / "grid_cell_info.csv")
-    locations = read_locations(CODERS_DATA_DIR / "grid_cell_info.csv")
+    cells, areas = read_grid_cells(paths.CODERS_DATA_DIR / "grid_cell_info.csv")
+    locations = read_locations(paths.CODERS_DATA_DIR / "grid_cell_info.csv")
     latitudes = [locations[c][0] for c in cells]
     longitudes = [locations[c][1] for c in cells]
     check_spacing(longitudes, latitudes)

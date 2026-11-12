@@ -8,11 +8,13 @@ from datetime import datetime, timedelta
 from email.message import EmailMessage
 from io import BytesIO, StringIO
 from pathlib import Path
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 from test_fetch import FakeResponse
 
+from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, FetchIncompleteError
 from flux_match.steps.fetch.fetch_ninja import (
@@ -105,7 +107,11 @@ class NinjaTestCase(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
-        self.ninja_dir = self.dir / "ninja"
+        patcher = mock.patch.object(paths, "DATA_DIR", self.dir / "data")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.ninja_dir = paths.NINJA_DATA_DIR
+        self.ninja_dir.mkdir(parents=True)
         self.grid = self.dir / "grid_cell_info.csv"
         self.write_grid(3)
         self.clock = Clock()
@@ -124,7 +130,6 @@ class NinjaTestCase(unittest.TestCase):
                 params,
                 YEAR,
                 self.grid,
-                self.ninja_dir,
                 environ={API_TOKEN_ENV: TOKEN} if environ is None else environ,
                 opener=opener,
                 clock=self.clock,
@@ -134,7 +139,7 @@ class NinjaTestCase(unittest.TestCase):
 
     @property
     def raw(self) -> Path:
-        return raw_dir(self.ninja_dir, PARAMS, YEAR)
+        return raw_dir(PARAMS, YEAR)
 
     def raw_names(self) -> list[str]:
         return sorted(p.name for p in self.raw.iterdir())
@@ -196,8 +201,8 @@ class DownloadTest(NinjaTestCase):
 
     def test_files_are_named_by_turbine_settings_and_year(self):
         other = NinjaParams(100, "Gamesa G114 2000", 5, 50)
-        self.assertEqual(raw_dir(self.ninja_dir, other, 2024).name, "gamesa_g114_2000_100m_2024")
-        self.assertEqual(raw_dir(self.ninja_dir, other, 2024).parent, self.ninja_dir / "raw")
+        self.assertEqual(raw_dir(other, 2024).name, "gamesa_g114_2000_100m_2024")
+        self.assertEqual(raw_dir(other, 2024).parent, paths.NINJA_DATA_DIR / "raw")
 
     def test_missing_token_fails_before_any_request(self):
         opener = RecordingOpener()
@@ -393,7 +398,7 @@ def indexed_csv(year: int = YEAR, scale: int = 1) -> bytes:
 
 class CollateTest(NinjaTestCase):
     def write_raw(self, cell: int, body: bytes, year: int = YEAR) -> Path:
-        directory = raw_dir(self.ninja_dir, PARAMS, year)
+        directory = raw_dir(PARAMS, year)
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"wind_{cell}.csv"
         path.write_bytes(body)
@@ -402,11 +407,11 @@ class CollateTest(NinjaTestCase):
     def collate(self, year: int = YEAR) -> tuple[str, str]:
         out, err = StringIO(), StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            collate(PARAMS, year, self.grid, self.ninja_dir)
+            collate(PARAMS, year, self.grid)
         return out.getvalue(), err.getvalue()
 
     def output(self, year: int = YEAR) -> list[list[str]]:
-        with collated_path(self.ninja_dir, year).open(newline="") as f:
+        with collated_path(year).open(newline="") as f:
             return list(csv.reader(f))
 
     def test_collates_capacity_factors_in_grid_order(self):
@@ -416,7 +421,7 @@ class CollateTest(NinjaTestCase):
         out, err = self.collate()
 
         rows = self.output()
-        self.assertEqual(collated_path(self.ninja_dir, YEAR).name, "wind_capacity_factor_2025.csv")
+        self.assertEqual(collated_path(YEAR).name, "wind_capacity_factor_2025.csv")
         self.assertEqual(rows[0], ["h", "1", "2", "3"])
         self.assertEqual(len(rows), 8761)
         self.assertEqual(rows[1], ["1", "0.5", "0.250005", "1"])
@@ -449,7 +454,7 @@ class CollateTest(NinjaTestCase):
         out, err = self.collate()
         self.assertIn("no raw files yet", out)
         self.assertEqual(err, "")
-        self.assertFalse(collated_path(self.ninja_dir, YEAR).exists())
+        self.assertFalse(collated_path(YEAR).exists())
 
     def test_hours_are_read_across_chunk_boundaries(self):
         self.write_raw(1, indexed_csv())
@@ -483,7 +488,7 @@ class CollateTest(NinjaTestCase):
     def test_up_to_date_output_is_not_rebuilt(self):
         paths_ = [self.write_raw(n, ninja_csv(value="50000")) for n in (1, 2, 3)]
         self.collate()
-        dest = collated_path(self.ninja_dir, YEAR)
+        dest = collated_path(YEAR)
         dest.write_text("sentinel\n")
         newest = max(p.stat().st_mtime for p in paths_)
 
@@ -500,7 +505,7 @@ class CollateTest(NinjaTestCase):
         self.write_raw(1, ninja_csv(value="50000"))
         _, err = self.collate()
         self.assertIn("2 of 3 cells", err)
-        dest = collated_path(self.ninja_dir, YEAR)
+        dest = collated_path(YEAR)
         old = dest.stat().st_mtime
         os.utime(dest, (old - 100, old - 100))
 

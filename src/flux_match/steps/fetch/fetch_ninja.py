@@ -41,6 +41,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, FetchIncompleteError, report_data_error
 from flux_match.schema import HOURS_PER_YEAR
@@ -117,10 +118,10 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
 
 
-def raw_dir(ninja_dir: Path, params: NinjaParams, year: int) -> Path:
+def raw_dir(params: NinjaParams, year: int) -> Path:
     """Folder of raw files for one turbine model, height and year."""
     name = f"{_slug(params.turbine_model)}_{params.turbine_height}m_{year}"
-    return ninja_dir / RAW_SUBDIR / name
+    return paths.NINJA_DATA_DIR / RAW_SUBDIR / name
 
 
 def raw_path(directory: Path, cell: Cell) -> Path:
@@ -217,7 +218,6 @@ def download(
     params: NinjaParams,
     year: int,
     grid_cell_info: Path,
-    ninja_dir: Path,
     *,
     environ: Mapping[str, str] | None = None,
     opener: Opener | None = None,
@@ -230,20 +230,22 @@ def download(
     continue.
     """
     cells = read_cells(grid_cell_info)
-    directory = raw_dir(ninja_dir, params, year)
+    directory = raw_dir(params, year)
     missing = [
         (c, raw_path(directory, c)) for c in cells if not _already_present(raw_path(directory, c))
     ]
     print(
         f"NINJA wind: {len(cells) - len(missing)} of {len(cells)} cells already downloaded "
-        f"({directory.relative_to(ninja_dir)})",
+        f"({directory.relative_to(paths.NINJA_DATA_DIR)})",
         flush=True,
     )
     if not missing:
         return
     token = _api_token(environ)
     directory.mkdir(parents=True, exist_ok=True)
-    limiter = RequestLimiter(ninja_dir / REQUEST_LOG_NAME, params.max_requests_per_hour, clock)
+    limiter = RequestLimiter(
+        paths.NINJA_DATA_DIR / REQUEST_LOG_NAME, params.max_requests_per_hour, clock
+    )
     get = opener or urlopen
     for i, (cell, dest) in enumerate(missing):
         resume_at = limiter.next_allowed()
@@ -417,19 +419,19 @@ def validate_raw(body: bytes, year: int, name: str) -> None:
         raise DataError(f"{name}: expected {expected_hours} hours for {year}, got {hours}")
 
 
-def collated_path(ninja_dir: Path, year: int) -> Path:
-    return ninja_dir / f"wind_capacity_factor_{year}.csv"
+def collated_path(year: int) -> Path:
+    return paths.NINJA_DATA_DIR / f"wind_capacity_factor_{year}.csv"
 
 
-def collate(params: NinjaParams, year: int, grid_cell_info: Path, ninja_dir: Path) -> None:
+def collate(params: NinjaParams, year: int, grid_cell_info: Path) -> None:
     """Write wind_capacity_factor_<year>.csv from the raw files downloaded so far.
 
     Skipped if there are no raw files, or the output is newer than all of them. Cells that have
     no raw file are filled with capacity factor 0 and reported in a warning.
     """
     cells = read_cells(grid_cell_info)
-    directory = raw_dir(ninja_dir, params, year)
-    dest = collated_path(ninja_dir, year)
+    directory = raw_dir(params, year)
+    dest = collated_path(year)
     present = [c for c in cells if _already_present(raw_path(directory, c))]
     if not present:
         print(f"NINJA wind: no raw files yet, not writing {dest.name}", flush=True)
@@ -439,7 +441,7 @@ def collate(params: NinjaParams, year: int, grid_cell_info: Path, ninja_dir: Pat
         return
     print(
         f"writing {dest.name} from {len(present)} of {len(cells)} cells "
-        f"({directory.relative_to(ninja_dir)})",
+        f"({directory.relative_to(paths.NINJA_DATA_DIR)})",
         flush=True,
     )
     readers = {c.grid_cell: _RawReader(raw_path(directory, c)) for c in present}

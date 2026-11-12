@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
+from flux_match import paths
 from flux_match.errors import DataError
-from flux_match.paths import CODERS_DATA_DIR, NINJA_DATA_DIR
 from flux_match.viz.cf_animation import (
     COLOR_BOOST,
     GENERATION_TYPES,
@@ -66,20 +66,20 @@ class CapacityFactorPathTest(unittest.TestCase):
     def test_wind_defaults_to_coders(self):
         self.assertEqual(
             capacity_factor_path("wind", 2021),
-            CODERS_DATA_DIR / "wind_capacity_factor_2021.csv",
+            paths.CODERS_DATA_DIR / "wind_capacity_factor_2021.csv",
         )
 
     def test_wind_ninja_uses_ninja_dir(self):
         self.assertEqual(
             capacity_factor_path("wind", 2021, wind_source="ninja"),
-            NINJA_DATA_DIR / "wind_capacity_factor_2021.csv",
+            paths.NINJA_DATA_DIR / "wind_capacity_factor_2021.csv",
         )
 
     def test_solar_always_uses_coders(self):
         for wind_source in ("coders", "ninja"):
             self.assertEqual(
                 capacity_factor_path("solar", 2021, wind_source=wind_source),
-                CODERS_DATA_DIR / "solar_capacity_factor_2021.csv",
+                paths.CODERS_DATA_DIR / "solar_capacity_factor_2021.csv",
             )
 
     def test_invalid_wind_source_fails(self):

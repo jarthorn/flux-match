@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from flux_match import paths
 from flux_match.config import Config
@@ -307,13 +308,15 @@ class PairedHoursTest(TempDirTest):
 class DispatchRunTest(TempDirTest):
     def setUp(self) -> None:
         super().setUp()
-        self.data_dir = self.dir / "data"
-        self.data_dir.mkdir()
+        patcher = mock.patch.object(paths, "DATA_DIR", self.dir / "data")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        paths.DATA_DIR.mkdir()
         # 100 MW average East.a load: capacity 0.2 days = 480 MWh, power 120 MW.
-        paths.ba_demand_path(self.data_dir).write_text(
+        paths.ba_demand_path().write_text(
             f"balancing_area,2023,2024\nEast.a,0,{100.0 * HOURS_PER_YEAR}\n"
         )
-        paths.ba_demand_hourly_path(2024, self.data_dir).write_text(
+        paths.ba_demand_hourly_path(2024).write_text(
             hourly_csv("demand_mw", {"East.a": [100.0, 100.0, 300.0]})
         )
         scenario = self.write(
@@ -333,7 +336,7 @@ class DispatchRunTest(TempDirTest):
 
     def _run(self) -> None:
         with redirect_stdout(StringIO()):
-            run(self.ctx, data_dir=self.data_dir, hours_in_year=HOURS)
+            run(self.ctx, hours_in_year=HOURS)
 
     def test_writes_one_file_per_dispatch_year_sized_from_newest_demand_year(self) -> None:
         self._run()
@@ -372,12 +375,12 @@ class DispatchRunTest(TempDirTest):
         )
         paths.vre_hourly_path(batch_ctx).write_text(paths.vre_hourly_path(self.ctx).read_text())
         with redirect_stdout(StringIO()):
-            run(batch_ctx, data_dir=self.data_dir, hours_in_year=HOURS)
+            run(batch_ctx, hours_in_year=HOURS)
         self.assertEqual(sorted(p.name for p in batch_ctx.run_dir.glob("dispatch*")), [])
         self.assertEqual(batch_ctx.read_stats("dispatch"), expected)
 
     def test_missing_hourly_demand_year_fails_with_hint(self) -> None:
-        paths.ba_demand_hourly_path(2024, self.data_dir).unlink()
+        paths.ba_demand_hourly_path(2024).unlink()
         with self.assertRaisesRegex(DataError, "Add 2024 to fetch.demand_years"):
             self._run()
 

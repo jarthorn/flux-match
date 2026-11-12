@@ -4,6 +4,7 @@ from contextlib import redirect_stdout
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from flux_match import paths
 from flux_match.errors import DataError
@@ -190,14 +191,15 @@ class WriteVreHourlyTest(TempDirTest):
 class PreprocessRunTest(TempDirTest):
     def setUp(self) -> None:
         super().setUp()
-        self.data_dir = self.dir / "coders"
-        self.data_dir.mkdir()
-        self.ninja_dir = self.dir / "ninja"
-        (self.data_dir / "grid_cell_info.csv").write_text(GRID_HEADER + "1,East.a\n")
-        (self.data_dir / "wind_capacity_factor_2021.csv").write_text(
+        patcher = mock.patch.object(paths, "DATA_DIR", self.dir / "data")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        paths.CODERS_DATA_DIR.mkdir(parents=True)
+        (paths.CODERS_DATA_DIR / "grid_cell_info.csv").write_text(GRID_HEADER + "1,East.a\n")
+        (paths.CODERS_DATA_DIR / "wind_capacity_factor_2021.csv").write_text(
             hourly_csv({"1": [0.5, 0.0, 0.0]})
         )
-        (self.data_dir / "solar_capacity_factor_2021.csv").write_text(
+        (paths.CODERS_DATA_DIR / "solar_capacity_factor_2021.csv").write_text(
             hourly_csv({"1": [0.25, 0.0, 0.0]})
         )
 
@@ -217,7 +219,7 @@ class PreprocessRunTest(TempDirTest):
 
     def run_step(self, ctx) -> None:
         with redirect_stdout(StringIO()):
-            run(ctx, data_dir=self.data_dir, ninja_dir=self.ninja_dir, hours_in_year=HOURS)
+            run(ctx, hours_in_year=HOURS)
 
     def test_run_uses_configured_capacity_factor_year(self) -> None:
         ctx = self.make_ctx()
@@ -229,8 +231,8 @@ class PreprocessRunTest(TempDirTest):
         self.assertEqual(float(rows[0]["variable_generation_mw"]), 7.0)
 
     def test_ninja_wind_source_uses_the_ninja_table_and_coders_solar(self) -> None:
-        self.ninja_dir.mkdir()
-        (self.ninja_dir / "wind_capacity_factor_2021.csv").write_text(
+        paths.NINJA_DATA_DIR.mkdir()
+        (paths.NINJA_DATA_DIR / "wind_capacity_factor_2021.csv").write_text(
             hourly_csv({"1": [0.1, 0.0, 0.0]})
         )
         ctx = self.make_ctx("ninja")
@@ -247,7 +249,7 @@ class PreprocessRunTest(TempDirTest):
         self.assertFalse(paths.vre_hourly_path(ctx).exists())
 
     def test_missing_wind_table_fails_instead_of_using_another_source(self) -> None:
-        (self.data_dir / "wind_capacity_factor_2021.csv").unlink()
+        (paths.CODERS_DATA_DIR / "wind_capacity_factor_2021.csv").unlink()
         with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
             self.run_step(self.make_ctx("coders"))
 

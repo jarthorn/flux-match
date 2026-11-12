@@ -107,9 +107,7 @@ class FetchParams:
 
 def run(
     config: Config,
-    data_dir: Path = paths.CODERS_DATA_DIR,
     *,
-    ninja_dir: Path = paths.NINJA_DATA_DIR,
     environ: Mapping[str, str] | None = None,
     opener: Opener | None = None,
 ) -> None:
@@ -118,27 +116,20 @@ def run(
 
     fetch_config = config.section("fetch")
     params = FetchParams.from_config(fetch_config)
-    data_dir.mkdir(parents=True, exist_ok=True)
-    fetch_coders.download(
-        params,
-        data_dir,
-        environ=environ,
-        opener=opener,
-    )
-    _write_balancing_area_demand(data_dir, params.demand_years)
+    paths.CODERS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fetch_coders.download(params, environ=environ, opener=opener)
+    _write_balancing_area_demand(params.demand_years)
     if params.wind_source == "ninja":
         # Before the rankings, which are only built from a complete NINJA download. Can stop
         # early at NINJA's rate limit and fail the run; the CODERS derivations above are in
         # place when it does.
-        _fetch_ninja_wind(fetch_config, params, data_dir, ninja_dir, environ, opener)
-    _write_rankings(fetch_config, params, data_dir, ninja_dir)
+        _fetch_ninja_wind(fetch_config, params, environ, opener)
+    _write_rankings(fetch_config, params)
 
 
 def _fetch_ninja_wind(
     fetch_config: Config,
     params: FetchParams,
-    data_dir: Path,
-    ninja_dir: Path,
     environ: Mapping[str, str] | None,
     opener: Opener | None,
 ) -> None:
@@ -146,48 +137,48 @@ def _fetch_ninja_wind(
 
     ninja = fetch_ninja.NinjaParams.from_config(fetch_config.section("ninja"))
     (year,) = params.capacity_factor_years
-    grid_cell_info = paths.csv_path(data_dir, GRID_CELL_TABLE)
+    grid_cell_info = paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE)
     stopped = None
     try:
-        fetch_ninja.download(ninja, year, grid_cell_info, ninja_dir, environ=environ, opener=opener)
+        fetch_ninja.download(ninja, year, grid_cell_info, environ=environ, opener=opener)
     except FetchIncompleteError as e:
         stopped = e  # still collate what was downloaded, then fail the run
-    fetch_ninja.collate(ninja, year, grid_cell_info, ninja_dir)
+    fetch_ninja.collate(ninja, year, grid_cell_info)
     if stopped:
         # The collated table is now partial (zero-filled), so rankings built from an earlier,
         # complete download (e.g. other turbine settings) no longer match it.
-        paths.grid_cell_rankings_path("ninja", data_dir.parent).unlink(missing_ok=True)
+        paths.grid_cell_rankings_path("ninja").unlink(missing_ok=True)
         raise stopped
 
 
-def _write_rankings(
-    fetch_config: Config, params: FetchParams, data_dir: Path, ninja_dir: Path
-) -> None:
+def _write_rankings(fetch_config: Config, params: FetchParams) -> None:
     """Derive the rankings file for the wind source if it is missing or older than any of its
     inputs. Reached for NINJA only once its download is complete."""
     (year,) = params.capacity_factor_years
-    grid_cell_info = paths.csv_path(data_dir, GRID_CELL_TABLE)
-    solar = paths.csv_path(data_dir, SOLAR_CF_TABLE, year=year)
-    wind = paths.wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
-    dest = paths.grid_cell_rankings_path(params.wind_source, data_dir.parent)
+    grid_cell_info = paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE)
+    solar = paths.csv_path(paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year)
+    wind = paths.wind_capacity_factor_path(fetch_config)
+    dest = paths.grid_cell_rankings_path(params.wind_source)
     if _up_to_date(dest, [grid_cell_info, solar, wind]):
         return
     print(f"writing {dest.name}", flush=True)
     write_grid_cell_rankings(grid_cell_info, solar, wind, dest)
 
 
-def _write_balancing_area_demand(data_dir: Path, demand_years: Sequence[int]) -> None:
+def _write_balancing_area_demand(demand_years: Sequence[int]) -> None:
     """Derive balancing_area_demand.csv from every provincial demand file, and the hourly file
     for each of `demand_years`, each only if missing or older than its inputs."""
-    files = find_demand_files(data_dir)
-    dest = paths.ba_demand_path(data_dir.parent)
+    files = find_demand_files(paths.CODERS_DATA_DIR)
+    dest = paths.ba_demand_path()
     if not _up_to_date(dest, demand_file_paths(files)):
         print(f"writing {dest.name}", flush=True)
         write_balancing_area_demand(files, dest)
     for year in demand_years:
         if year not in files:
-            raise DataError(f"No provincial demand files for demand year {year} in {data_dir}")
-        dest = paths.ba_demand_hourly_path(year, data_dir.parent)
+            raise DataError(
+                f"No provincial demand files for demand year {year} in {paths.CODERS_DATA_DIR}"
+            )
+        dest = paths.ba_demand_hourly_path(year)
         if not _up_to_date(dest, list(files[year].values())):
             print(f"writing {dest.name}", flush=True)
             write_hourly_ba_demand(files[year], dest)

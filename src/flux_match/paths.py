@@ -4,6 +4,9 @@ Filename and path construction for the project lives here. Constants are names t
 change at runtime; parameterized paths are functions. When a path depends on scenario config,
 pass a RunContext (or, for fetch which has no run folder yet, the fetch Config section) and let
 the function here read the keys it needs.
+
+DATA_DIR is the shared data/ folder. CODERS_DATA_DIR and NINJA_DATA_DIR are always
+DATA_DIR/coders and DATA_DIR/ninja (resolved on access, so patching DATA_DIR in tests is enough).
 """
 
 from __future__ import annotations
@@ -16,6 +19,10 @@ if TYPE_CHECKING:
     from flux_match.config import Config
     from flux_match.run_context import RunContext
 
+    # Provided at runtime by __getattr__, always derived from DATA_DIR.
+    CODERS_DATA_DIR: Path
+    NINJA_DATA_DIR: Path
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if not (PROJECT_ROOT / "pyproject.toml").is_file():
     raise RuntimeError(
@@ -23,8 +30,6 @@ if not (PROJECT_ROOT / "pyproject.toml").is_file():
     )
 
 DATA_DIR = PROJECT_ROOT / "data"
-CODERS_DATA_DIR = DATA_DIR / "coders"
-NINJA_DATA_DIR = DATA_DIR / "ninja"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 
@@ -38,6 +43,15 @@ VRE_HOURLY_FILENAME = "vre_by_ba_hourly.csv"
 BA_DEMAND_FILENAME = "balancing_area_demand.csv"
 
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
+
+
+def __getattr__(name: str) -> Path:
+    # Derived from DATA_DIR on each access so tests that patch DATA_DIR see matching subfolders.
+    if name == "CODERS_DATA_DIR":
+        return DATA_DIR / "coders"
+    if name == "NINJA_DATA_DIR":
+        return DATA_DIR / "ninja"
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def rankings_filename(wind_source: str) -> str:
@@ -60,9 +74,9 @@ def csv_filename(table: str, province: str | None = None, year: int | None = Non
 
 
 def csv_path(
-    data_dir: Path, table: str, province: str | None = None, year: int | None = None
+    directory: Path, table: str, province: str | None = None, year: int | None = None
 ) -> Path:
-    return data_dir / csv_filename(table, province, year)
+    return directory / csv_filename(table, province, year)
 
 
 def defaults_path() -> Path:
@@ -86,17 +100,16 @@ def batch_run_dir_name(batch_index: int) -> str:
     return f"{batch_index:04d}"
 
 
-def ba_demand_path(data_dir: Path | None = None) -> Path:
-    # Resolve DATA_DIR at call time so tests can patch it.
-    return (DATA_DIR if data_dir is None else data_dir) / BA_DEMAND_FILENAME
+def ba_demand_path() -> Path:
+    return DATA_DIR / BA_DEMAND_FILENAME
 
 
-def ba_demand_hourly_path(year: int, data_dir: Path | None = None) -> Path:
-    return (DATA_DIR if data_dir is None else data_dir) / ba_demand_hourly_filename(year)
+def ba_demand_hourly_path(year: int) -> Path:
+    return DATA_DIR / ba_demand_hourly_filename(year)
 
 
-def grid_cell_rankings_path(wind_source: str, data_dir: Path | None = None) -> Path:
-    return (DATA_DIR if data_dir is None else data_dir) / rankings_filename(wind_source)
+def grid_cell_rankings_path(wind_source: str) -> Path:
+    return DATA_DIR / rankings_filename(wind_source)
 
 
 def grid_cell_rankings(ctx: RunContext) -> Path:
@@ -138,26 +151,12 @@ def manifest_path(run_dir: Path) -> Path:
     return run_dir / MANIFEST_NAME
 
 
-def wind_capacity_factor_path(
-    fetch_config: Config,
-    coders_dir: Path | None = None,
-    ninja_dir: Path | None = None,
-) -> Path:
+def wind_capacity_factor_path(fetch_config: Config) -> Path:
     """The hourly wind capacity-factor table for `fetch.wind_source`, for steps after fetch."""
     from flux_match.errors import DataError
     from flux_match.steps.fetch.fetch import WIND_CF_TABLE, FetchParams
 
     params = FetchParams.from_config(fetch_config)
     (year,) = params.capacity_factor_years
-    if coders_dir is None:
-        coders_dir = CODERS_DATA_DIR
-    if ninja_dir is None:
-        ninja_dir = NINJA_DATA_DIR
-    wind_dir = ninja_dir if params.wind_source == "ninja" else coders_dir
-    path = csv_path(wind_dir, WIND_CF_TABLE, year=year)
-    if not (path.is_file() and path.stat().st_size > 0):
-        raise DataError(
-            f"{path} not found (fetch.wind_source = {params.wind_source!r}); "
-            f"run `flux-match fetch` first"
-        )
-    return path
+    wind_dir = NINJA_DATA_DIR if params.wind_source == "ninja" else CODERS_DATA_DIR
+    return csv_path(wind_dir, WIND_CF_TABLE, year=year)

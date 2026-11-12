@@ -166,15 +166,18 @@ class FetchTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.data_dir = Path(tmp.name) / "coders"
-        self.rankings = paths.grid_cell_rankings_path("coders", Path(tmp.name))
-        self.ninja_rankings = paths.grid_cell_rankings_path("ninja", Path(tmp.name))
+        patcher = mock.patch.object(paths, "DATA_DIR", Path(tmp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.data_dir = paths.CODERS_DATA_DIR  # CODERS cache; DATA_DIR is patched above
+        self.rankings = paths.grid_cell_rankings_path("coders")
+        self.ninja_rankings = paths.grid_cell_rankings_path("ninja")
         self.dotenv = Path(tmp.name) / ".env"
         # These tests cache only ON demand; balancing_area_demand needs every province and is
         # covered by BalancingAreaDemandStepTest and test_balancing_area_demand.py.
-        patcher = mock.patch("flux_match.steps.fetch.fetch._write_balancing_area_demand")
-        self.ba_demand_step = patcher.start()
-        self.addCleanup(patcher.stop)
+        ba_patcher = mock.patch("flux_match.steps.fetch.fetch._write_balancing_area_demand")
+        self.ba_demand_step = ba_patcher.start()
+        self.addCleanup(ba_patcher.stop)
 
     def _run(self, opener, cfg=None, environ=None) -> str:
         """Run fetch and return what it wrote to stderr."""
@@ -182,7 +185,6 @@ class FetchTest(unittest.TestCase):
         with redirect_stdout(StringIO()), redirect_stderr(stderr):
             run(
                 cfg or fetch_config(),
-                self.data_dir,
                 environ=environ if environ is not None else {API_KEY_ENV: SECRET},
                 opener=opener,
             )
@@ -333,7 +335,7 @@ class FetchTest(unittest.TestCase):
 
     def test_balancing_area_demand_step_runs_after_downloads(self):
         self._run(RecordingOpener(responses()))
-        self.ba_demand_step.assert_called_once_with(self.data_dir, (2024,))
+        self.ba_demand_step.assert_called_once_with((2024,))
 
     def _run_ninja(self, **download_kwargs) -> RecordingOpener:
         """Run fetch with wind_source "ninja". NINJA's download and collation are mocked (they
@@ -341,7 +343,7 @@ class FetchTest(unittest.TestCase):
         are kept as self.download and self.collate. A download that returns normally means
         every cell was downloaded. `download_kwargs` configures the download mock, e.g.
         side_effect."""
-        self.ninja_dir = self.data_dir.parent / "ninja"
+        self.ninja_dir = paths.NINJA_DATA_DIR
         self.ninja_dir.mkdir(exist_ok=True)
         (self.ninja_dir / "wind_capacity_factor_2021.csv").write_bytes(
             capacity_factor_csv(HOURS_PER_YEAR, "0.4")
@@ -355,8 +357,6 @@ class FetchTest(unittest.TestCase):
         ):
             run(
                 fetch_config(wind_source="ninja"),
-                self.data_dir,
-                ninja_dir=self.ninja_dir,
                 environ={API_KEY_ENV: SECRET},
                 opener=opener,
             )
@@ -385,8 +385,8 @@ class FetchTest(unittest.TestCase):
         grid_cell_info = self.data_dir / "grid_cell_info.csv"
         self.download.assert_called_once()
         args = self.download.call_args.args
-        self.assertEqual(args[1:], (2021, grid_cell_info, self.ninja_dir))
-        self.collate.assert_called_once_with(args[0], 2021, grid_cell_info, self.ninja_dir)
+        self.assertEqual(args[1:], (2021, grid_cell_info))
+        self.collate.assert_called_once_with(args[0], 2021, grid_cell_info)
         rows = read_rows(self.ninja_rankings)
         self.assertAlmostEqual(float(rows[0]["annual_wind_capacity_factor"]), 0.4 * 8760)
         self.assertAlmostEqual(float(rows[0]["annual_solar_capacity_factor"]), 0.2 * 8760)
@@ -413,16 +413,15 @@ class FetchTest(unittest.TestCase):
             FetchParams.from_config(fetch_config(wind_source="nrel").section("fetch"))
 
     def test_missing_wind_table_is_a_hard_failure_for_later_steps(self):
-        ninja_dir = self.data_dir.parent / "ninja"
-        for source, folder in (("coders", self.data_dir), ("ninja", ninja_dir)):
+        for source, folder in (("coders", paths.CODERS_DATA_DIR), ("ninja", paths.NINJA_DATA_DIR)):
             with self.subTest(source=source):
                 fetch = fetch_config(wind_source=source).section("fetch")
                 with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
-                    paths.wind_capacity_factor_path(fetch, self.data_dir, ninja_dir)
+                    paths.wind_capacity_factor_path(fetch)
                 folder.mkdir(exist_ok=True)
                 (folder / "wind_capacity_factor_2021.csv").write_text("h,1\n")
                 self.assertEqual(
-                    paths.wind_capacity_factor_path(fetch, self.data_dir, ninja_dir),
+                    paths.wind_capacity_factor_path(fetch),
                     folder / "wind_capacity_factor_2021.csv",
                 )
 
@@ -533,20 +532,23 @@ class BalancingAreaDemandStepTest(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.data_dir = Path(tmp.name) / "coders"
-        self.dest = Path(tmp.name) / "balancing_area_demand.csv"
-        self.hourly_2024 = Path(tmp.name) / "balancing_area_demand_hourly_2024.csv"
+        patcher = mock.patch.object(paths, "DATA_DIR", Path(tmp.name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.data_dir = paths.CODERS_DATA_DIR
+        self.dest = paths.ba_demand_path()
+        self.hourly_2024 = paths.ba_demand_hourly_path(2024)
         write_demand_files(self.data_dir, [2022, 2024])
 
     def _step(self, demand_years: tuple[int, ...] = (2024,)) -> str:
         stdout = StringIO()
         with redirect_stdout(stdout):
-            _write_balancing_area_demand(self.data_dir, demand_years)
+            _write_balancing_area_demand(demand_years)
         return stdout.getvalue()
 
     def test_hourly_file_written_only_for_configured_years(self):
         self.assertIn("writing balancing_area_demand_hourly_2024.csv", self._step())
-        self.assertFalse((self.data_dir.parent / "balancing_area_demand_hourly_2022.csv").exists())
+        self.assertFalse(paths.ba_demand_hourly_path(2022).exists())
         all_bas = {ba for populations in PROVINCE_BA_POPULATION.values() for ba in populations}
         self.assertEqual(len(read_rows(self.hourly_2024)), len(all_bas) * HOURS_PER_YEAR)
 

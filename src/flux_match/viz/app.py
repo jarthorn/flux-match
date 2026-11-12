@@ -37,11 +37,9 @@ SERIES_DESCRIPTIONS = {
 
 
 @st.cache_data(show_spinner="Reading hourly files")
-def _cached_tables(
-    run_dir: str, year: int, data_dir: str
-) -> tuple[HourlyTable, HourlyTable, HourlyTable]:
+def _cached_tables(run_dir: str, year: int) -> tuple[HourlyTable, HourlyTable, HourlyTable]:
     ctx = open_run(Path(run_dir))
-    return load_dashboard_tables(ctx, year, Path(data_dir))
+    return load_dashboard_tables(ctx, year)
 
 
 def _select_run_dir(argv: Sequence[str], output_dir: Path = paths.OUTPUT_DIR) -> Path:
@@ -72,7 +70,7 @@ def main() -> None:
     with year_col:
         year = st.selectbox("Year", years, index=years.index(max(years)))
     try:
-        demand, vre, dispatch = _cached_tables(str(ctx.run_dir), year, str(paths.DATA_DIR))
+        demand, vre, dispatch = _cached_tables(str(ctx.run_dir), year)
     except FluxMatchError as e:
         st.error(str(e))
         st.stop()

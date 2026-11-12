@@ -96,15 +96,14 @@ def downloads(params: FetchParams) -> list[Download]:
 
 def download(
     params: FetchParams,
-    data_dir: Path,
     *,
     environ: Mapping[str, str] | None = None,
     opener: Opener | None = None,
 ) -> None:
-    """Download any missing CODERS tables into data_dir."""
+    """Download any missing CODERS tables into paths.CODERS_DATA_DIR."""
     missing: list[tuple[Download, Path]] = []
     for item in downloads(params):
-        dest = data_dir / item.filename
+        dest = paths.CODERS_DATA_DIR / item.filename
         if not _already_present(dest):
             missing.append((item, dest))
     if not missing:
