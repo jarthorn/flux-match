@@ -23,9 +23,7 @@ from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
     FetchParams,
     _write_balancing_area_demand,
-    csv_path,
     run,
-    wind_capacity_factor_path,
 )
 from flux_match.steps.fetch.fetch_coders import API_KEY_ENV, downloads
 
@@ -169,8 +167,8 @@ class FetchTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.data_dir = Path(tmp.name) / "coders"
-        self.rankings = Path(tmp.name) / paths.rankings_filename("coders")
-        self.ninja_rankings = Path(tmp.name) / paths.rankings_filename("ninja")
+        self.rankings = paths.grid_cell_rankings_path("coders", Path(tmp.name))
+        self.ninja_rankings = paths.grid_cell_rankings_path("ninja", Path(tmp.name))
         self.dotenv = Path(tmp.name) / ".env"
         # These tests cache only ON demand; balancing_area_demand needs every province and is
         # covered by BalancingAreaDemandStepTest and test_balancing_area_demand.py.
@@ -212,7 +210,7 @@ class FetchTest(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            csv_path(self.data_dir, "provincial_demand", province="ON", year=2024),
+            paths.csv_path(self.data_dir, "provincial_demand", province="ON", year=2024),
             self.data_dir / "provincial_demand_ON_2024.csv",
         )
 
@@ -420,11 +418,11 @@ class FetchTest(unittest.TestCase):
             with self.subTest(source=source):
                 fetch = fetch_config(wind_source=source).section("fetch")
                 with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
-                    wind_capacity_factor_path(fetch, self.data_dir, ninja_dir)
+                    paths.wind_capacity_factor_path(fetch, self.data_dir, ninja_dir)
                 folder.mkdir(exist_ok=True)
                 (folder / "wind_capacity_factor_2021.csv").write_text("h,1\n")
                 self.assertEqual(
-                    wind_capacity_factor_path(fetch, self.data_dir, ninja_dir),
+                    paths.wind_capacity_factor_path(fetch, self.data_dir, ninja_dir),
                     folder / "wind_capacity_factor_2021.csv",
                 )
 

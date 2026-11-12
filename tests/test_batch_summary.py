@@ -8,9 +8,9 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from typing import Any
 
+from flux_match import paths
 from flux_match.config import dump_toml
 from flux_match.errors import DataError, RunStateError
-from flux_match.run_context import CONFIG_NAME, MANIFEST_NAME
 from flux_match.viz.batch_summary import (
     INVARIANTS_FILENAME,
     SUMMARY_FILENAME,
@@ -53,7 +53,7 @@ class BatchSummaryTest(unittest.TestCase):
     def add_run(self, index: int, config: dict[str, Any], **manifest: Any) -> Path:
         run_dir = self.batch_dir / f"{index:04d}"
         run_dir.mkdir()
-        (run_dir / CONFIG_NAME).write_text(dump_toml(config))
+        paths.config_path(run_dir).write_text(dump_toml(config))
         manifest = {
             "batch_name": "batch",
             "batch_index": index,
@@ -62,7 +62,7 @@ class BatchSummaryTest(unittest.TestCase):
             "dispatch_stats": dispatch_stats(),
             **manifest,
         }
-        (run_dir / MANIFEST_NAME).write_text(json.dumps(manifest))
+        paths.manifest_path(run_dir).write_text(json.dumps(manifest))
         return run_dir
 
     def with_overrides(self, **overrides: Any) -> dict[str, Any]:
@@ -174,7 +174,7 @@ class BatchSummaryTest(unittest.TestCase):
     def test_bad_runs_are_all_reported_and_nothing_written(self):
         self.add_run(1, self.with_overrides())
         self.add_run(2, self.with_overrides(), completed_steps=["select", "preprocess"])
-        (self.add_run(3, self.with_overrides()) / MANIFEST_NAME).unlink()
+        paths.manifest_path(self.add_run(3, self.with_overrides())).unlink()
         self.add_run(4, self.with_overrides(), batch_index=5)
         stderr = io.StringIO()
         with redirect_stderr(stderr), self.assertRaisesRegex(DataError, "3 of 4 run folders"):

@@ -139,17 +139,17 @@ def run(
     hours_in_year: int = HOURS_PER_YEAR,
 ) -> None:
     params = DispatchParams.from_config(ctx.config.section("dispatch"))
-    _, annual_demand = read_ba_demand(data_dir / paths.BA_DEMAND_FILENAME)
+    _, annual_demand = read_ba_demand(paths.ba_demand_path(data_dir))
     batteries = size_batteries(annual_demand, params.bess_capacity_ratio, params.bess_duration)
     totals: defaultdict[str, DispatchTotals] = defaultdict(DispatchTotals)
     for year in params.dispatch_years:
-        demand_path = data_dir / paths.ba_demand_hourly_filename(year)
+        demand_path = paths.ba_demand_hourly_path(year, data_dir)
         if not demand_path.is_file():
             raise DataError(
                 f"Hourly demand for {year} not found: {demand_path}. "
                 f"Add {year} to fetch.demand_years and run fetch."
             )
-        hours = paired_hours(demand_path, ctx.vre_hourly_path, hours_in_year=hours_in_year)
+        hours = paired_hours(demand_path, paths.vre_hourly_path(ctx), hours_in_year=hours_in_year)
         rows = dispatch_rows(year, hours, batteries, params, totals=totals)
         if ctx.batch:
             # Only the statistics are wanted: run the dispatch (and its input validation)
@@ -157,7 +157,7 @@ def run(
             print(f"dispatching {year}", flush=True)
             deque(rows, maxlen=0)
         else:
-            dest = ctx.dispatch_hourly_path(year)
+            dest = paths.dispatch_hourly_path(ctx, year)
             print(f"writing {dest.name}", flush=True)
             write_csv_atomic(dest, DISPATCH_COLUMNS, rows)
     ctx.record_stats("dispatch", dispatch_stats(totals))

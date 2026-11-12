@@ -256,13 +256,13 @@ def load_dashboard_tables(
     hours_in_year: int = HOURS_PER_YEAR,
 ) -> tuple[HourlyTable, HourlyTable, HourlyTable]:
     """Demand, wind/solar, and dispatch tables for one year, checked against each other."""
-    demand_path = data_dir / paths.ba_demand_hourly_filename(year)
+    demand_path = paths.ba_demand_hourly_path(year, data_dir)
     demand = load_hourly_table(demand_path, ("demand_mw",), hours_in_year=hours_in_year)
     vre = load_hourly_table(
-        ctx.vre_hourly_path, ("wind_mw", "solar_mw"), hours_in_year=hours_in_year
+        paths.vre_hourly_path(ctx), ("wind_mw", "solar_mw"), hours_in_year=hours_in_year
     )
     dispatch = load_hourly_table(
-        ctx.dispatch_hourly_path(year),
+        paths.dispatch_hourly_path(ctx, year),
         ("battery_output_mw", "net_demand_mw"),
         hours_in_year=hours_in_year,
         expected_year=year,

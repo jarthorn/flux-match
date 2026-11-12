@@ -24,16 +24,15 @@ from flux_match.errors import ConfigError
 from flux_match.grid_cell_rankings import RankedCell, read_cells_by_ba
 from flux_match.io import write_csv
 from flux_match.run_context import RunContext
+from flux_match.steps.fetch.fetch import GRID_CELL_TABLE
 from flux_match.steps.select.base import (
     CapacityParams,
     Site,
     Strategy,
-    rankings_path,
     select_per_balancing_area,
 )
 from flux_match.steps.select.kmeans import GeoKMeans, GeoPoint
 
-GRID_CELL_INFO = "grid_cell_info.csv"
 ANNUAL_RANK_FIELDS = ("ba_annual_wind_rank", "ba_annual_solar_rank")
 CLUSTER_COLUMNS = (
     "grid_cell",
@@ -60,10 +59,10 @@ class ClusterStrategy(Strategy):
 
     def select(self, ctx: RunContext) -> list[Site]:
         return select_sites(
-            demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
-            rankings_path=rankings_path(ctx),
-            grid_cell_info=paths.CODERS_DATA_DIR / GRID_CELL_INFO,
-            clusters_path=None if ctx.batch else ctx.clusters_path,
+            demand_path=paths.ba_demand_path(),
+            rankings_path=paths.grid_cell_rankings(ctx),
+            grid_cell_info=paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE),
+            clusters_path=None if ctx.batch else paths.clusters_path(ctx),
             capacity=self.capacity,
             kmeans=self.kmeans,
         )

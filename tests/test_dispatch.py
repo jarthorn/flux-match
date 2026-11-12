@@ -310,10 +310,10 @@ class DispatchRunTest(TempDirTest):
         self.data_dir = self.dir / "data"
         self.data_dir.mkdir()
         # 100 MW average East.a load: capacity 0.2 days = 480 MWh, power 120 MW.
-        (self.data_dir / paths.BA_DEMAND_FILENAME).write_text(
+        paths.ba_demand_path(self.data_dir).write_text(
             f"balancing_area,2023,2024\nEast.a,0,{100.0 * HOURS_PER_YEAR}\n"
         )
-        (self.data_dir / paths.ba_demand_hourly_filename(2024)).write_text(
+        paths.ba_demand_hourly_path(2024, self.data_dir).write_text(
             hourly_csv("demand_mw", {"East.a": [100.0, 100.0, 300.0]})
         )
         scenario = self.write(
@@ -326,7 +326,7 @@ class DispatchRunTest(TempDirTest):
             "bess_duration = 4\n",
         )
         self.ctx = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 20, 0))
-        self.ctx.vre_hourly_path.write_text(
+        paths.vre_hourly_path(self.ctx).write_text(
             "balancing_area,hour,wind_mw,solar_mw,variable_generation_mw\n"
             "East.a,1,300,0,300\nEast.a,2,0,0,0\nEast.a,3,0,0,0\n"
         )
@@ -337,7 +337,7 @@ class DispatchRunTest(TempDirTest):
 
     def test_writes_one_file_per_dispatch_year_sized_from_newest_demand_year(self) -> None:
         self._run()
-        rows = read_csv(self.ctx.dispatch_hourly_path(2024), DISPATCH_COLUMNS)
+        rows = read_csv(paths.dispatch_hourly_path(self.ctx, 2024), DISPATCH_COLUMNS)
         self.assertEqual([r["hour"] for r in rows], ["1", "2", "3"])
         # Hour 1: 200 MW surplus, charge capped at 120 MW drawn, storing 60 MWh.
         self.assertEqual(float(rows[0]["battery_output_mw"]), -120.0)
@@ -370,19 +370,19 @@ class DispatchRunTest(TempDirTest):
             datetime(2026, 10, 27, 20, 1),
             batch="test",
         )
-        batch_ctx.vre_hourly_path.write_text(self.ctx.vre_hourly_path.read_text())
+        paths.vre_hourly_path(batch_ctx).write_text(paths.vre_hourly_path(self.ctx).read_text())
         with redirect_stdout(StringIO()):
             run(batch_ctx, data_dir=self.data_dir, hours_in_year=HOURS)
         self.assertEqual(sorted(p.name for p in batch_ctx.run_dir.glob("dispatch*")), [])
         self.assertEqual(batch_ctx.read_stats("dispatch"), expected)
 
     def test_missing_hourly_demand_year_fails_with_hint(self) -> None:
-        (self.data_dir / paths.ba_demand_hourly_filename(2024)).unlink()
+        paths.ba_demand_hourly_path(2024, self.data_dir).unlink()
         with self.assertRaisesRegex(DataError, "Add 2024 to fetch.demand_years"):
             self._run()
 
     def test_mismatched_inputs_leave_no_output_file(self) -> None:
-        self.ctx.vre_hourly_path.write_text(
+        paths.vre_hourly_path(self.ctx).write_text(
             "balancing_area,hour,variable_generation_mw\nWest.a,1,0\nWest.a,2,0\nWest.a,3,0\n"
         )
         with self.assertRaises(DataError):

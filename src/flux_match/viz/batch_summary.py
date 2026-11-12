@@ -24,7 +24,7 @@ from flux_match import paths
 from flux_match.config import dump_toml, dump_value, read_toml
 from flux_match.errors import DataError, FluxMatchError, RunStateError, report_data_error
 from flux_match.io import write_csv_atomic
-from flux_match.run_context import CONFIG_NAME, MANIFEST_NAME, check_batch_name
+from flux_match.run_context import check_batch_name
 from flux_match.steps.dispatch.dispatch import STATS_TOTAL_KEY
 
 SUMMARY_FILENAME = "summary.csv"
@@ -78,7 +78,7 @@ def unflatten_config(flat: dict[str, Any]) -> dict[str, Any]:
 def read_run(run_dir: Path) -> BatchRun:
     """One batch run folder; raises DataError (naming the folder) if it is incomplete."""
     try:
-        config = flatten_config(read_toml(run_dir / CONFIG_NAME))
+        config = flatten_config(read_toml(paths.config_path(run_dir)))
         for key, value in config.items():
             try:
                 dump_value(value)
@@ -102,15 +102,15 @@ def read_run(run_dir: Path) -> BatchRun:
 
 
 def _read_manifest(run_dir: Path) -> dict[str, Any]:
-    path = run_dir / MANIFEST_NAME
+    path = paths.manifest_path(run_dir)
     if not path.is_file():
-        raise DataError(f"missing {MANIFEST_NAME}")
+        raise DataError(f"missing {paths.MANIFEST_NAME}")
     try:
         manifest = json.loads(path.read_text())
     except json.JSONDecodeError as e:
-        raise DataError(f"invalid {MANIFEST_NAME}: {e}") from None
+        raise DataError(f"invalid {paths.MANIFEST_NAME}: {e}") from None
     if not isinstance(manifest, dict):
-        raise DataError(f"{MANIFEST_NAME} must be a JSON object")
+        raise DataError(f"{paths.MANIFEST_NAME} must be a JSON object")
     return manifest
 
 

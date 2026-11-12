@@ -1,5 +1,6 @@
 """Step 2: select wind and solar sites with the strategy named in the [selection] table."""
 
+from flux_match import paths
 from flux_match.errors import ConfigError
 from flux_match.run_context import RunContext
 from flux_match.steps.select.base import Strategy, write_sites
@@ -23,4 +24,4 @@ def run(ctx: RunContext) -> None:
         )
     params.section(name)  # [selection.<strategy>] must exist, even if it has no keys
     sites = STRATEGIES[name](params).select(ctx)
-    write_sites(ctx.selected_sites_path, sites)
+    write_sites(paths.selected_sites_path(ctx), sites)

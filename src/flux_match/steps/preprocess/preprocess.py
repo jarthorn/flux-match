@@ -26,13 +26,7 @@ from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_gri
 from flux_match.io import write_csv_atomic
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR, VRE_HOURLY_COLUMNS
-from flux_match.steps.fetch.fetch import (
-    GRID_CELL_TABLE,
-    SOLAR_CF_TABLE,
-    FetchParams,
-    csv_path,
-    wind_capacity_factor_path,
-)
+from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, SOLAR_CF_TABLE, FetchParams
 from flux_match.steps.select.base import GenerationType, Site, read_sites
 
 WIND_TYPES = frozenset({GenerationType.WIND_ONSHORE, GenerationType.WIND_OFFSHORE})
@@ -57,14 +51,14 @@ def run(
     (year,) = params.capacity_factor_years
     # Wind comes from fetch.wind_source and fails if that source's table is missing; solar is
     # always from CODERS.
-    wind_cf = wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
-    dest = ctx.vre_hourly_path
+    wind_cf = paths.wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
+    dest = paths.vre_hourly_path(ctx)
     print(f"writing {dest.name} (wind source: {params.wind_source})", flush=True)
     write_vre_hourly(
-        sites_path=ctx.selected_sites_path,
-        grid_cell_info=csv_path(data_dir, GRID_CELL_TABLE),
+        sites_path=paths.selected_sites_path(ctx),
+        grid_cell_info=paths.csv_path(data_dir, GRID_CELL_TABLE),
         wind_cf=wind_cf,
-        solar_cf=csv_path(data_dir, SOLAR_CF_TABLE, year=year),
+        solar_cf=paths.csv_path(data_dir, SOLAR_CF_TABLE, year=year),
         dest=dest,
         hours_in_year=hours_in_year,
     )

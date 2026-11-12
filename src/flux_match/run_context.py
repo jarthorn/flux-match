@@ -13,9 +13,6 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, RunStateError
 
-CONFIG_NAME = "config.toml"
-MANIFEST_NAME = "run.json"
-
 RUN_STEPS = ("select", "preprocess", "dispatch")
 
 MAX_BATCH_INDEX = 9999
@@ -35,24 +32,9 @@ class RunContext:
     config: Config
     batch: bool = False
 
-    @property
-    def selected_sites_path(self) -> Path:
-        return self.run_dir / "selected_sites.csv"
-
-    @property
-    def clusters_path(self) -> Path:
-        return self.run_dir / "clusters.csv"
-
-    @property
-    def vre_hourly_path(self) -> Path:
-        return self.run_dir / "vre_by_ba_hourly.csv"
-
-    def dispatch_hourly_path(self, year: int) -> Path:
-        return self.run_dir / f"dispatch_hourly_{year}.csv"
-
     def remove_intermediate_files(self) -> None:
         """Delete files that later steps need but that are not results (batch mode cleanup)."""
-        self.vre_hourly_path.unlink(missing_ok=True)
+        paths.vre_hourly_path(self).unlink(missing_ok=True)
 
     def require_complete(self, step: str) -> None:
         if step not in self._read_manifest()["completed_steps"]:
@@ -89,10 +71,10 @@ class RunContext:
         return self._read_manifest().get(_stats_key(step))
 
     def _read_manifest(self) -> dict[str, Any]:
-        return json.loads((self.run_dir / MANIFEST_NAME).read_text())
+        return json.loads(paths.manifest_path(self.run_dir).read_text())
 
     def _write_manifest(self, manifest: dict[str, Any]) -> None:
-        (self.run_dir / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n")
+        paths.manifest_path(self.run_dir).write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 def _stats_key(step: str) -> str:
@@ -119,10 +101,10 @@ def create_run(
     else:
         run_dir, batch_index = _allocate_batch_run_dir(output_dir / batch)
     # Snapshot the resolved config so re-runs do not pick up later changes to defaults.toml.
-    (run_dir / CONFIG_NAME).write_text(config.to_toml())
+    paths.config_path(run_dir).write_text(config.to_toml())
     ctx = RunContext(
         run_dir,
-        Config.load(run_dir / CONFIG_NAME, inherit_defaults=False),
+        Config.load(paths.config_path(run_dir), inherit_defaults=False),
         batch=batch is not None,
     )
     ctx._write_manifest(
@@ -142,7 +124,7 @@ def create_run(
 def check_batch_name(output_dir: Path, name: str) -> None:
     if name in ("", ".", "..") or "/" in name or "\\" in name:
         raise ConfigError(f"Batch name must be a plain folder name: {name!r}")
-    if (output_dir / name / CONFIG_NAME).is_file():
+    if paths.config_path(output_dir / name).is_file():
         raise RunStateError(f"Batch name is an existing run folder: {output_dir / name}")
 
 
@@ -173,10 +155,13 @@ def _allocate_batch_run_dir(batch_dir: Path) -> tuple[Path, int]:
 
 
 def open_run(run_dir: Path) -> RunContext:
-    for name in (CONFIG_NAME, MANIFEST_NAME):
-        if not (run_dir / name).is_file():
+    for name, path in (
+        (paths.CONFIG_NAME, paths.config_path(run_dir)),
+        (paths.MANIFEST_NAME, paths.manifest_path(run_dir)),
+    ):
+        if not path.is_file():
             raise RunStateError(f"Not a run folder (missing {name}): {run_dir}")
-    return RunContext(run_dir, Config.load(run_dir / CONFIG_NAME, inherit_defaults=False))
+    return RunContext(run_dir, Config.load(paths.config_path(run_dir), inherit_defaults=False))
 
 
 def latest_run_dir(output_dir: Path = paths.OUTPUT_DIR) -> Path:
@@ -186,7 +171,9 @@ def latest_run_dir(output_dir: Path = paths.OUTPUT_DIR) -> Path:
     runs = [
         path
         for path in output_dir.iterdir()
-        if path.is_dir() and (path / CONFIG_NAME).is_file() and (path / MANIFEST_NAME).is_file()
+        if path.is_dir()
+        and paths.config_path(path).is_file()
+        and paths.manifest_path(path).is_file()
     ]
     if not runs:
         raise RunStateError(f"No run folders found in {output_dir}")

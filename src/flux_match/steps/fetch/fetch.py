@@ -39,8 +39,8 @@ download is complete (and removed again if a later download stops early), so lat
 on the missing file rather than use incomplete NINJA data. The rankings are derived from one
 capacity-factor year, so exactly one must be configured.
 
-wind_capacity_factor_path() is how later steps find the wind table for the configured source. It
-fails if the table is missing.
+paths.wind_capacity_factor_path() is how later steps find the wind table for the configured
+source. It fails if the table is missing.
 """
 
 import csv
@@ -105,18 +105,6 @@ class FetchParams:
         )
 
 
-def csv_filename(table: str, province: str | None = None, year: int | None = None) -> str:
-    """Name of a cached table: `<table>[_<province>][_<year>].csv`."""
-    parts = [table, province, None if year is None else str(year)]
-    return "_".join(p for p in parts if p is not None) + ".csv"
-
-
-def csv_path(
-    data_dir: Path, table: str, province: str | None = None, year: int | None = None
-) -> Path:
-    return data_dir / csv_filename(table, province, year)
-
-
 def run(
     config: Config,
     data_dir: Path = paths.CODERS_DATA_DIR,
@@ -158,7 +146,7 @@ def _fetch_ninja_wind(
 
     ninja = fetch_ninja.NinjaParams.from_config(fetch_config.section("ninja"))
     (year,) = params.capacity_factor_years
-    grid_cell_info = csv_path(data_dir, GRID_CELL_TABLE)
+    grid_cell_info = paths.csv_path(data_dir, GRID_CELL_TABLE)
     stopped = None
     try:
         fetch_ninja.download(ninja, year, grid_cell_info, ninja_dir, environ=environ, opener=opener)
@@ -168,27 +156,8 @@ def _fetch_ninja_wind(
     if stopped:
         # The collated table is now partial (zero-filled), so rankings built from an earlier,
         # complete download (e.g. other turbine settings) no longer match it.
-        (data_dir.parent / paths.rankings_filename("ninja")).unlink(missing_ok=True)
+        paths.grid_cell_rankings_path("ninja", data_dir.parent).unlink(missing_ok=True)
         raise stopped
-
-
-def wind_capacity_factor_path(
-    fetch_config: Config,
-    coders_dir: Path = paths.CODERS_DATA_DIR,
-    ninja_dir: Path = paths.NINJA_DATA_DIR,
-) -> Path:
-    """The hourly wind capacity-factor table for `fetch.wind_source`, for steps after fetch."""
-
-    params = FetchParams.from_config(fetch_config)
-    (year,) = params.capacity_factor_years
-    wind_dir = ninja_dir if params.wind_source == "ninja" else coders_dir
-    path = csv_path(wind_dir, WIND_CF_TABLE, year=year)
-    if not _already_present(path):
-        raise DataError(
-            f"{path} not found (fetch.wind_source = {params.wind_source!r}); "
-            f"run `flux-match fetch` first"
-        )
-    return path
 
 
 def _write_rankings(
@@ -197,10 +166,10 @@ def _write_rankings(
     """Derive the rankings file for the wind source if it is missing or older than any of its
     inputs. Reached for NINJA only once its download is complete."""
     (year,) = params.capacity_factor_years
-    grid_cell_info = csv_path(data_dir, GRID_CELL_TABLE)
-    solar = csv_path(data_dir, SOLAR_CF_TABLE, year=year)
-    wind = wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
-    dest = data_dir.parent / paths.rankings_filename(params.wind_source)
+    grid_cell_info = paths.csv_path(data_dir, GRID_CELL_TABLE)
+    solar = paths.csv_path(data_dir, SOLAR_CF_TABLE, year=year)
+    wind = paths.wind_capacity_factor_path(fetch_config, data_dir, ninja_dir)
+    dest = paths.grid_cell_rankings_path(params.wind_source, data_dir.parent)
     if _up_to_date(dest, [grid_cell_info, solar, wind]):
         return
     print(f"writing {dest.name}", flush=True)
@@ -211,14 +180,14 @@ def _write_balancing_area_demand(data_dir: Path, demand_years: Sequence[int]) ->
     """Derive balancing_area_demand.csv from every provincial demand file, and the hourly file
     for each of `demand_years`, each only if missing or older than its inputs."""
     files = find_demand_files(data_dir)
-    dest = data_dir.parent / paths.BA_DEMAND_FILENAME
+    dest = paths.ba_demand_path(data_dir.parent)
     if not _up_to_date(dest, demand_file_paths(files)):
         print(f"writing {dest.name}", flush=True)
         write_balancing_area_demand(files, dest)
     for year in demand_years:
         if year not in files:
             raise DataError(f"No provincial demand files for demand year {year} in {data_dir}")
-        dest = data_dir.parent / paths.ba_demand_hourly_filename(year)
+        dest = paths.ba_demand_hourly_path(year, data_dir.parent)
         if not _up_to_date(dest, list(files[year].values())):
             print(f"writing {dest.name}", flush=True)
             write_hourly_ba_demand(files[year], dest)

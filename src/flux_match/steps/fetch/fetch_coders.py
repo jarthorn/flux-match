@@ -15,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from flux_match import paths
 from flux_match.errors import DataError
 from flux_match.io import write_csv
 from flux_match.steps.fetch.fetch import (
@@ -27,7 +28,6 @@ from flux_match.steps.fetch.fetch import (
     _fill_missing_from_previous_hour,
     _http_error_body,
     _message_from_body,
-    csv_filename,
 )
 
 API_BASE = "https://api.sesit.ca"
@@ -70,7 +70,7 @@ class Download:
 
     @property
     def filename(self) -> str:
-        return csv_filename(self.table, **self.params)
+        return paths.csv_filename(self.table, **self.params)
 
 
 def downloads(params: FetchParams) -> list[Download]:

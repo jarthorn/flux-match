@@ -29,13 +29,7 @@ from flux_match.errors import ConfigError, DataError
 from flux_match.grid_cell_rankings import iter_hourly_capacity_factors, read_cells_by_ba
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.steps.fetch.fetch import (
-    GRID_CELL_TABLE,
-    SOLAR_CF_TABLE,
-    FetchParams,
-    csv_path,
-    wind_capacity_factor_path,
-)
+from flux_match.steps.fetch.fetch import GRID_CELL_TABLE, SOLAR_CF_TABLE, FetchParams
 from flux_match.steps.select.base import (
     SELECTED_TYPES,
     Allocation,
@@ -45,7 +39,6 @@ from flux_match.steps.select.base import (
     Strategy,
     allocate_in_order,
     plan_allocations,
-    rankings_path,
 )
 from flux_match.steps.select.total_variation import (
     total_variation,
@@ -64,13 +57,15 @@ class TvciStrategy(Strategy):
         fetch_config = ctx.config.section("fetch")
         (year,) = FetchParams.from_config(fetch_config).capacity_factor_years
         return select_sites(
-            demand_path=paths.DATA_DIR / paths.BA_DEMAND_FILENAME,
-            rankings_path=rankings_path(ctx),
-            grid_cell_info=csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE),
+            demand_path=paths.ba_demand_path(),
+            rankings_path=paths.grid_cell_rankings(ctx),
+            grid_cell_info=paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE),
             capacity_factor_paths={
                 # Onshore and offshore wind share one table, from fetch.wind_source.
-                GenerationType.WIND_ONSHORE: wind_capacity_factor_path(fetch_config),
-                GenerationType.SOLAR: csv_path(paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year),
+                GenerationType.WIND_ONSHORE: paths.wind_capacity_factor_path(fetch_config),
+                GenerationType.SOLAR: paths.csv_path(
+                    paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year
+                ),
             },
             capacity=self.capacity,
             candidate_multiple=self.candidate_multiple,

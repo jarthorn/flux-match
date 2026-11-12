@@ -5,6 +5,7 @@ from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
+from flux_match import paths
 from flux_match.errors import DataError, FluxMatchError
 from flux_match.io import write_csv
 from flux_match.run_context import create_run
@@ -352,12 +353,12 @@ class LoadDashboardTablesTest(TempDirTest):
             hourly_rows({"East.a": {"demand_mw": [100, 110, 120]}}),
         )
         write_csv(
-            ctx.vre_hourly_path,
+            paths.vre_hourly_path(ctx),
             ("balancing_area", "hour", "wind_mw", "solar_mw"),
             hourly_rows({"East.a": {"wind_mw": [10, 11, 12], "solar_mw": [0, 1, 2]}}),
         )
         write_csv(
-            ctx.dispatch_hourly_path(2024),
+            paths.dispatch_hourly_path(ctx, 2024),
             ("balancing_area", "year", "hour", "battery_output_mw", "net_demand_mw"),
             hourly_rows(
                 {"East.a": {"battery_output_mw": [0, 0, 1], "net_demand_mw": [90, 98, 105]}},

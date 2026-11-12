@@ -33,7 +33,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Self
 
-from flux_match import paths
 from flux_match.balancing_area_demand import read_ba_demand
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError
@@ -41,7 +40,6 @@ from flux_match.grid_cell_rankings import RankedCell
 from flux_match.io import read_csv, write_csv
 from flux_match.run_context import RunContext
 from flux_match.schema import HOURS_PER_YEAR
-from flux_match.steps.fetch.fetch import FetchParams
 
 
 class GenerationType(StrEnum):
@@ -99,18 +97,6 @@ def read_sites(path: Path) -> list[Site]:
             raise DataError(f"{path}:{line}: {e}") from e
     _reject_duplicates(sites, path)
     return sites
-
-
-def rankings_path(ctx: RunContext) -> Path:
-    """The grid cell rankings for the run's fetch.wind_source. Fails if fetch has not built them
-    (for NINJA, that means its download is not complete)."""
-    wind_source = FetchParams.from_config(ctx.config.section("fetch")).wind_source
-    path = paths.DATA_DIR / paths.rankings_filename(wind_source)
-    if not path.is_file():
-        raise DataError(
-            f"{path} not found; run `flux-match fetch` with wind_source={wind_source!r}"
-        )
-    return path
 
 
 class Strategy(ABC):

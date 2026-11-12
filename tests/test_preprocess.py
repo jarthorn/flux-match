@@ -5,6 +5,7 @@ from datetime import datetime
 from io import StringIO
 from pathlib import Path
 
+from flux_match import paths
 from flux_match.errors import DataError
 from flux_match.io import read_csv
 from flux_match.run_context import create_run
@@ -211,7 +212,7 @@ class PreprocessRunTest(TempDirTest):
             lines.append(f'wind_source = "{wind_source}"')
         scenario = self.write("default.toml", "\n".join(lines) + "\n")
         ctx = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 19, 51))
-        write_sites(ctx.selected_sites_path, [Site(1, WIND_ONS, 10.0), Site(1, SOLAR, 8.0)])
+        write_sites(paths.selected_sites_path(ctx), [Site(1, WIND_ONS, 10.0), Site(1, SOLAR, 8.0)])
         return ctx
 
     def run_step(self, ctx) -> None:
@@ -221,7 +222,7 @@ class PreprocessRunTest(TempDirTest):
     def test_run_uses_configured_capacity_factor_year(self) -> None:
         ctx = self.make_ctx()
         self.run_step(ctx)
-        rows = read_csv(ctx.vre_hourly_path, VRE_HOURLY_COLUMNS)
+        rows = read_csv(paths.vre_hourly_path(ctx), VRE_HOURLY_COLUMNS)
         self.assertEqual(len(rows), HOURS)
         self.assertEqual(float(rows[0]["wind_mw"]), 5.0)
         self.assertEqual(float(rows[0]["solar_mw"]), 2.0)
@@ -234,7 +235,7 @@ class PreprocessRunTest(TempDirTest):
         )
         ctx = self.make_ctx("ninja")
         self.run_step(ctx)
-        rows = read_csv(ctx.vre_hourly_path, VRE_HOURLY_COLUMNS)
+        rows = read_csv(paths.vre_hourly_path(ctx), VRE_HOURLY_COLUMNS)
         self.assertEqual(float(rows[0]["wind_mw"]), 1.0)  # 10 MW * 0.1, not CODERS' 0.5
         self.assertEqual(float(rows[0]["solar_mw"]), 2.0)
 
@@ -243,7 +244,7 @@ class PreprocessRunTest(TempDirTest):
         ctx = self.make_ctx("ninja")
         with self.assertRaisesRegex(DataError, r"wind_capacity_factor_2021\.csv not found"):
             self.run_step(ctx)
-        self.assertFalse(ctx.vre_hourly_path.exists())
+        self.assertFalse(paths.vre_hourly_path(ctx).exists())
 
     def test_missing_wind_table_fails_instead_of_using_another_source(self) -> None:
         (self.data_dir / "wind_capacity_factor_2021.csv").unlink()

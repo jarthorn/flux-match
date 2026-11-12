@@ -11,7 +11,6 @@ from flux_match.steps import select
 from flux_match.steps.select.base import (
     GenerationType,
     Site,
-    rankings_path,
     read_sites,
     write_sites,
 )
@@ -104,7 +103,8 @@ class RankingsPathTest(unittest.TestCase):
         for source in ("coders", "ninja"):
             (self.dir / f"grid_cell_rankings_{source}.csv").write_text("grid_cell\n")
             self.assertEqual(
-                rankings_path(self.ctx(source)), self.dir / f"grid_cell_rankings_{source}.csv"
+                paths.grid_cell_rankings(self.ctx(source)),
+                self.dir / f"grid_cell_rankings_{source}.csv",
             )
 
     def test_missing_rankings_for_the_source_fail_even_if_another_source_has_them(self) -> None:

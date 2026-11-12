@@ -4,11 +4,10 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
+from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, RunStateError
 from flux_match.run_context import (
-    CONFIG_NAME,
-    MANIFEST_NAME,
     create_run,
     latest_run_dir,
     open_run,
@@ -32,7 +31,7 @@ class RunContextTest(unittest.TestCase):
         self.assertEqual(ctx.run_dir, self.output / "20261027-0905-greedy")
         # Snapshot is the resolved defaults + scenario merge, not a raw copy of the file.
         self.assertEqual(
-            (ctx.run_dir / CONFIG_NAME).read_text(), Config.load(self.scenario).to_toml()
+            paths.config_path(ctx.run_dir).read_text(), Config.load(self.scenario).to_toml()
         )
         self.assertEqual(ctx.config.section("selection").get("strategy", str), "greedy")
         self.assertIn("AB", ctx.config.section("fetch").get_list("provinces", str))
@@ -40,10 +39,10 @@ class RunContextTest(unittest.TestCase):
     def test_overrides_are_in_config_snapshot_and_manifest(self):
         overrides = {"dispatch.bess_rte": 0.75, "fetch.provinces": ["ON"]}
         ctx = create_run(self.scenario, self.output, STARTED, overrides=overrides)
-        snapshot = Config.load(ctx.run_dir / CONFIG_NAME, inherit_defaults=False)
+        snapshot = Config.load(paths.config_path(ctx.run_dir), inherit_defaults=False)
         self.assertEqual(snapshot.section("dispatch").get("bess_rte", float), 0.75)
         self.assertEqual(snapshot.section("fetch").get_list("provinces", str), ["ON"])
-        manifest = json.loads((ctx.run_dir / MANIFEST_NAME).read_text())
+        manifest = json.loads(paths.manifest_path(ctx.run_dir).read_text())
         self.assertEqual(manifest["config_overrides"], overrides)
 
     def test_invalid_override_creates_no_run_folder(self):
@@ -57,7 +56,7 @@ class RunContextTest(unittest.TestCase):
             create_run(self.scenario, self.output, STARTED)
 
     def _manifest(self, ctx):
-        return json.loads((ctx.run_dir / MANIFEST_NAME).read_text())
+        return json.loads(paths.manifest_path(ctx.run_dir).read_text())
 
     def test_batch_runs_share_one_folder_across_start_times(self):
         # Regression: runs in one batch used to get differing timestamped folders.
@@ -96,7 +95,7 @@ class RunContextTest(unittest.TestCase):
         with self.assertRaisesRegex(RunStateError, "existing run folder"):
             create_run(self.scenario, self.output, STARTED, batch=run.run_dir.name)
         self.assertEqual(
-            sorted(p.name for p in run.run_dir.iterdir()), [CONFIG_NAME, MANIFEST_NAME]
+            sorted(p.name for p in run.run_dir.iterdir()), [paths.CONFIG_NAME, paths.MANIFEST_NAME]
         )
 
     def test_invalid_scenario_creates_no_run_folder(self):
@@ -137,8 +136,8 @@ class RunContextTest(unittest.TestCase):
 
     def test_remove_intermediate_files_deletes_vre_file_only(self):
         ctx = create_run(self.scenario, self.output, STARTED, batch="test")
-        ctx.vre_hourly_path.write_text("x")
-        ctx.selected_sites_path.write_text("y")
+        paths.vre_hourly_path(ctx).write_text("x")
+        paths.selected_sites_path(ctx).write_text("y")
         ctx.remove_intermediate_files()
         ctx.remove_intermediate_files()  # already gone: not an error
         self.assertEqual(
