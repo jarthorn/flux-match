@@ -158,5 +158,11 @@ def wind_capacity_factor_path(fetch_config: Config) -> Path:
 
     params = FetchParams.from_config(fetch_config)
     (year,) = params.capacity_factor_years
-    wind_dir = NINJA_DATA_DIR if params.wind_source == "ninja" else CODERS_DATA_DIR
-    return csv_path(wind_dir, WIND_CF_TABLE, year=year)
+    wind_dir = DATA_DIR / params.wind_source
+    path = csv_path(wind_dir, WIND_CF_TABLE, year=year)
+    if not (path.is_file() and path.stat().st_size > 0):
+        raise DataError(
+            f"{path} not found (fetch.wind_source = {params.wind_source!r}); "
+            f"run `flux-match fetch` first"
+        )
+    return path
