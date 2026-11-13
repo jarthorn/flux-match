@@ -208,7 +208,7 @@ def build_figure(
         go.Choropleth(
             geojson=geojson,
             locations=list(cells),
-            z=(first_hour / 255.0).tolist(),
+            z=(first_hour / 255.0).round(3).tolist(),
             text=list(areas),
             zmin=0,
             zmax=color_max,
@@ -234,7 +234,6 @@ def build_figure(
         margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     return fig
-
 
 PAGE_TEMPLATE = """<!DOCTYPE html>
 <html>
@@ -266,6 +265,10 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+<h1>Generation Capacity Factor Animation</h1>
+<p>
+  __INTRO_TEXT__
+</p>
 <div id="map-box">__FIGURE__</div>
 <div id="controls">
   <button id="play">Play</button>
@@ -434,7 +437,7 @@ SPEEDS = (0.5, 1, 2, 4, 8, 16)
 DEFAULT_SPEED = 1
 
 
-def render_page(fig: Any, frames: np.ndarray, title: str) -> str:
+def render_page(fig: Any, frames: np.ndarray, title: str, intro_text: str) -> str:
     """The full HTML page: the figure, controls, base64 frame data and the player script."""
     n_hours, n_cells = frames.shape
     config = {
@@ -464,6 +467,7 @@ def render_page(fig: Any, frames: np.ndarray, title: str) -> str:
         "PLAYER_JS": PLAYER_JS,
         "FIGURE": figure_html,
         "DATA": data,
+        "INTRO_TEXT": intro_text,
     }
     # One pass, so substituted text (e.g. plotly.js) is never searched for placeholders.
     return re.sub(r"__([A-Z_]+)__", lambda m: values[m.group(1)], PAGE_TEMPLATE)
@@ -489,9 +493,18 @@ def build_animation(
     print(f"Reading {generation_type} capacity factors for {year} from {cf_path}...")
     frames = load_frames(cf_path, cells)
 
+    data_source_name = "CODERS" if wind_source == "coders" else "renewables.ninja"
     title = f"Hourly {generation_type} capacity factor, {year}"
+    data_source_link = "https://www.renewables.ninja/" if wind_source == "ninja" else "https://coders.cme-emh.ca/"
+    intro_text = (
+      f"This animation shows the hourly capacity factor of {generation_type} generation in {year}. "
+      f"Map grid colors show the estimated actual capacity of a generator based at each map cell, for each hour of the year, "
+      f"as a proportion of its nameplate capacity. Historical weather data from {year} are used in the calculation. "
+      f"The data source is <a href=\"{data_source_link}\">{data_source_name}</a>."
+    )
+
     fig = build_figure(geojson, cells, areas, frames[0], title, color_scale_max(generation_type))
-    page = render_page(fig, frames, title)
+    page = render_page(fig, frames, title, intro_text)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(page, encoding="utf-8")
     print(f"Wrote {dest} ({dest.stat().st_size / 1e6:.1f} MB)")
