@@ -5,8 +5,8 @@
 
 Streams a capacity-factor CSV (one column per grid cell, one row per hour) and, for each hour,
 computes the population standard deviation of capacity factors across all cells in each balancing
-area. Output is a CSV with columns `h` and one column per balancing area (alphabetical), and one
-row per hour 1-8760.
+area, plus one column for the std across every cell. Output is a CSV with columns `h`, one column
+per balancing area (alphabetical), then `all_cells`, and one row per hour 1-8760.
 
 For `--type wind`, `--wind-source` chooses whether `wind_capacity_factor_<year>.csv` is read from
 CODERS (`data/coders/`) or renewables.ninja (`data/ninja/`). Solar always comes from CODERS.
@@ -37,6 +37,7 @@ GENERATION_TYPES = ("wind", "solar")
 WIND_SOURCES = ("coders", "ninja")
 DEFAULT_YEAR = 2021
 HOUR_COLUMN = "h"
+ALL_CELLS_COLUMN = "all_cells"
 
 
 def capacity_factor_path(generation_type: str, year: int, wind_source: str = "coders") -> Path:
@@ -93,7 +94,7 @@ def write_ba_hourly_std(
     *,
     hours_in_year: int = HOURS_PER_YEAR,
 ) -> None:
-    """Write hourly BA population stds for `cf_path` to `dest`."""
+    """Write hourly BA and all-cells population stds for `cf_path` to `dest`."""
     cells, areas = read_grid_cells(grid_path)
     require_matching_cells(cf_path, cells)
     by_ba = cells_by_balancing_area(cells, areas)
@@ -102,7 +103,7 @@ def write_ba_hourly_std(
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("w", newline="") as out:
         writer = csv.writer(out)
-        writer.writerow([HOUR_COLUMN, *ba_names])
+        writer.writerow([HOUR_COLUMN, *ba_names, ALL_CELLS_COLUMN])
         for hour, values in enumerate(
             iter_hourly_capacity_factors(cf_path, cells, hours_in_year=hours_in_year),
             start=1,
@@ -110,6 +111,7 @@ def write_ba_hourly_std(
             row: list[object] = [hour]
             for ba in ba_names:
                 row.append(population_std([values[i] for i in by_ba[ba]]))
+            row.append(population_std(values))
             writer.writerow(row)
 
 

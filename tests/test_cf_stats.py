@@ -67,8 +67,10 @@ class RequireMatchingCellsTest(TempDirTest):
 
 class WriteBaHourlyStdTest(TempDirTest):
     def test_hourly_std_by_balancing_area(self):
-        # Hour 1: A={0.0, 1.0} -> std sqrt(0.25)=0.5; B={0.5} -> 0.
-        # Hour 2: A={0.2, 0.4} -> sqrt(((0.1)^2+(0.1)^2)/2)=0.1; B={0.9} -> 0.
+        # Hour 1: A={0.0, 1.0} -> std sqrt(0.25)=0.5; B={0.5} -> 0;
+        #         all={0.0, 0.5, 1.0} -> sqrt(2/3)*0.5 = sqrt(1/6).
+        # Hour 2: A={0.2, 0.4} -> 0.1; B={0.9} -> 0;
+        #         all={0.2, 0.9, 0.4} -> mean 0.5; sqrt((0.09+0.16+0.01)/3)=sqrt(0.26/3).
         grid = self.write(
             "grid.csv",
             GRID_HEADER + "1,0,0,A.a,A\n2,0,0,B.a,B\n3,0,0,A.a,A\n",
@@ -79,13 +81,15 @@ class WriteBaHourlyStdTest(TempDirTest):
 
         with dest.open(newline="") as f:
             rows = list(csv.reader(f))
-        self.assertEqual(rows[0], ["h", "A.a", "B.a"])
+        self.assertEqual(rows[0], ["h", "A.a", "B.a", "all_cells"])
         self.assertEqual(rows[1][0], "1")
         self.assertAlmostEqual(float(rows[1][1]), 0.5)
         self.assertAlmostEqual(float(rows[1][2]), 0.0)
+        self.assertAlmostEqual(float(rows[1][3]), math.sqrt(1 / 6))
         self.assertEqual(rows[2][0], "2")
         self.assertAlmostEqual(float(rows[2][1]), 0.1)
         self.assertAlmostEqual(float(rows[2][2]), 0.0)
+        self.assertAlmostEqual(float(rows[2][3]), math.sqrt(0.26 / 3))
 
     def test_cell_mismatch_fails_before_writing(self):
         grid = self.write("grid.csv", GRID_HEADER + "1,0,0,A.a,A\n2,0,0,A.a,A\n")
