@@ -92,6 +92,25 @@ class TvciOrderTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one row per cell"):
             tvci_order([1, 2, 3], capacity_factors, 1)
 
+    def test_initial_total_scores_first_pick(self) -> None:
+        wave = np.array([0.0, 1.0, 0.0, 1.0, 0.0])
+        noise = np.array([0.2, 0.5, 0.1, 0.9, 0.4])
+        capacity_factors = np.stack([wave, wave, noise, 1.0 - wave])
+        # Without a seed the best-ranked cell is forced first; with a wave seed the
+        # mirror (cell 10) is the first pick instead.
+        self.assertEqual(tvci_order([7, 8, 9, 10], capacity_factors, 1), [7])
+        self.assertEqual(
+            tvci_order([7, 8, 9, 10], capacity_factors, 1, initial_total=wave),
+            [10],
+        )
+
+    def test_initial_total_rejects_bad_shape_or_values(self) -> None:
+        capacity_factors = np.zeros((2, 4))
+        with self.assertRaisesRegex(ValueError, "initial_total"):
+            tvci_order([1, 2], capacity_factors, 1, initial_total=np.zeros(3))
+        with self.assertRaisesRegex(DataError, "initial_total"):
+            tvci_order([1, 2], capacity_factors, 1, initial_total=np.array([1.0, np.nan, 0.0, 0.0]))
+
 
 class CandidatePoolSizeTest(unittest.TestCase):
     def test_rounds_up_and_caps_at_cells_available(self) -> None:

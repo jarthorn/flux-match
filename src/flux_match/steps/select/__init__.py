@@ -7,11 +7,13 @@ from flux_match.steps.select.base import Strategy, write_sites
 from flux_match.steps.select.cluster import ClusterStrategy
 from flux_match.steps.select.greedy import GreedyStrategy
 from flux_match.steps.select.tvci import TvciStrategy
+from flux_match.steps.select.wind_tvci import WindTvciStrategy
 
 STRATEGIES: dict[str, type[Strategy]] = {
     "cluster": ClusterStrategy,
     "greedy": GreedyStrategy,
     "tvci": TvciStrategy,
+    "wind-tvci": WindTvciStrategy,
 }
 
 

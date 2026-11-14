@@ -51,7 +51,7 @@ ANNUAL_RANK_FIELDS = ("ba_annual_wind_rank", "ba_annual_solar_rank")
 class TvciStrategy(Strategy):
     def __init__(self, params: Config) -> None:
         self.capacity = CapacityParams.from_config(params)
-        self.candidate_multiple = _candidate_multiple(params.section("tvci"))
+        self.candidate_multiple = candidate_multiple(params.section("tvci"))
 
     def select(self, ctx: RunContext) -> list[Site]:
         fetch_config = ctx.config.section("fetch")
@@ -136,14 +136,18 @@ def read_profiles(path: Path, cells: Sequence[int]) -> tuple[dict[int, int], NDA
 
 
 def tvci_order(
-    cells: Sequence[int], capacity_factors: NDArray[np.float64], count: int
+    cells: Sequence[int],
+    capacity_factors: NDArray[np.float64],
+    count: int,
+    initial_total: NDArray[np.float64] | None = None,
 ) -> list[int]:
     """The first `count` cells to fill, in pick order.
 
     `cells` are best-ranked first, and row i of `capacity_factors` is the time series of
-    cells[i]. The first pick is cells[0]. Each later pick is the remaining cell with the
-    highest complementarity index against the mean series of the cells picked so far, with
-    ties going to the earlier cell.
+    cells[i]. With no `initial_total`, the first pick is cells[0] and later picks maximize
+    complementarity against the sum of hourly capacity factors of cells picked so far. With
+    `initial_total` (shape matching one capacity-factor row), every pick including the first
+    is scored against that seed plus the sum of picks so far. Ties go to the earlier cell.
     """
     if capacity_factors.ndim != 2 or capacity_factors.shape[0] != len(cells):
         raise ValueError(
@@ -154,10 +158,24 @@ def tvci_order(
         raise ValueError(f"count must be in 0..{len(cells)}, got {count}")
     if count == 0:
         return []
+    hours = capacity_factors.shape[1]
+    if initial_total is None:
+        remaining = list(range(1, len(cells)))
+        picked = [0]
+        total = capacity_factors[0].copy()
+    else:
+        seed = np.asarray(initial_total, dtype=np.float64)
+        if seed.shape != (hours,):
+            raise ValueError(
+                f"initial_total must have shape ({hours},) to match capacity_factors, "
+                f"got {seed.shape}"
+            )
+        if not np.isfinite(seed).all():
+            raise DataError("initial_total contains NaN or infinite values")
+        remaining = list(range(len(cells)))
+        picked = []
+        total = seed.copy()
     constant = total_variation(capacity_factors) == 0.0
-    remaining = list(range(1, len(cells)))
-    picked = [0]
-    total = capacity_factors[0].copy()
     while len(picked) < count:
         if total_variation(total) == 0.0 and constant[remaining].any():
             raise DataError(
@@ -172,7 +190,7 @@ def tvci_order(
     return [cells[i] for i in picked]
 
 
-def _candidate_multiple(params: Config) -> float:
+def candidate_multiple(params: Config) -> float:
     value = params.get("candidate_multiple", float)
     if not math.isfinite(value) or value < 1:
         raise ConfigError(

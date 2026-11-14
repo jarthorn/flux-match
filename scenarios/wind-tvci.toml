@@ -1,0 +1,12 @@
+# Greedy solar by annual capacity, then wind by Total Variation Complementarity Index
+# seeded with that solar (complementarity to solar and to other selected wind sites).
+# Undefined keys are taken from defaults.toml.
+
+[selection]
+strategy = "wind-tvci"
+
+[selection.wind-tvci]
+# Candidate pool size for wind, as a multiple of the number of wind sites needed. The
+# candidates are the balancing area's top cells by annual wind capacity factor. 1 uses the
+# same wind cells as greedy.
+candidate_multiple = 2.0

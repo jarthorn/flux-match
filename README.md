@@ -95,3 +95,7 @@ The "cluster" strategy (see `docs/clustering-approach.md`) splits each balancing
 ### Total Variation Complementarity Index
 
 The "tvci" strategy (see `notes/tvci-approach.md`) picks sites whose hourly output complements the sites already picked, separately for each balancing area and for wind and solar. With N = ceil(target / per-cell cap) sites needed, the candidates are the area's top ceil(`[selection.tvci] candidate_multiple` * N) cells by annual capacity factor. The best candidate is picked first; each later pick is the candidate with the highest Total Variation Complementarity Index against the sum of hourly capacity factors of the cells picked so far. With `candidate_multiple = 1` it uses the same cells as greedy by annual capacity.
+
+### Wind TVCI
+
+The "wind-tvci" strategy places solar first with the greedy algorithm using annual capacity rank, then picks wind with TVCI. For each balancing area, the running complementarity baseline starts as the sum of hourly capacity factors of the solar cells already placed there, so every wind pick (including the first) is chosen for complementarity to that solar and to wind already picked. Wind candidate pools use `[selection.wind-tvci] candidate_multiple` the same way as tvci. With no solar in an area, wind falls back to classic TVCI.
