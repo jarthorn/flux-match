@@ -54,9 +54,15 @@ def capacity_factor_path(generation_type: str, year: int, wind_source: str = "co
     return directory / f"{generation_type}_capacity_factor_{year}.csv"
 
 
-def output_path(generation_type: str, now: datetime) -> Path:
+def output_path(
+    generation_type: str, year: int, now: datetime, wind_source: str = "coders"
+) -> Path:
+    """Default output path; solar always uses `coders` in the name regardless of `wind_source`."""
+    source = "coders" if generation_type == "solar" else wind_source
+    if source not in WIND_SOURCES:
+        raise ValueError(f"wind_source must be one of {list(WIND_SOURCES)}, got {source!r}")
     return paths.OUTPUT_DIR / (
-        f"cf-stats-{generation_type}-{now.strftime(paths.TIMESTAMP_FORMAT)}.csv"
+        f"cf-stats-{generation_type}-{year}-{source}-{now.strftime(paths.TIMESTAMP_FORMAT)}.csv"
     )
 
 
@@ -146,7 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="output CSV file (default: under output/)")
     args = parser.parse_args(argv)
     try:
-        dest = args.out or output_path(args.generation_type, datetime.now())
+        dest = args.out or output_path(
+            args.generation_type, args.year, datetime.now(), wind_source=args.wind_source
+        )
         build(args.generation_type, args.year, dest, wind_source=args.wind_source)
     except FluxMatchError as e:
         print(f"error: {e}", file=sys.stderr)

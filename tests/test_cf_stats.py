@@ -101,9 +101,20 @@ class WriteBaHourlyStdTest(TempDirTest):
 
 
 class PathHelpersTest(unittest.TestCase):
-    def test_output_path_includes_type_and_timestamp(self):
-        path = output_path("solar", datetime(2026, 11, 13, 14, 59))
-        self.assertEqual(path.name, "cf-stats-solar-20261113-1459.csv")
+    def test_output_path_includes_type_year_source_and_timestamp(self):
+        now = datetime(2026, 11, 13, 14, 59)
+        self.assertEqual(
+            output_path("wind", 2021, now, wind_source="coders").name,
+            "cf-stats-wind-2021-coders-20261113-1459.csv",
+        )
+        self.assertEqual(
+            output_path("wind", 2021, now, wind_source="ninja").name,
+            "cf-stats-wind-2021-ninja-20261113-1459.csv",
+        )
+
+    def test_output_path_solar_always_coders(self):
+        path = output_path("solar", 2021, datetime(2026, 11, 13, 14, 59), wind_source="ninja")
+        self.assertEqual(path.name, "cf-stats-solar-2021-coders-20261113-1459.csv")
 
     def test_capacity_factor_path_solar_always_coders(self):
         path = capacity_factor_path("solar", 2021, wind_source="ninja")
