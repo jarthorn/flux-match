@@ -100,7 +100,7 @@ a:hover { text-decoration-thickness: 2px; }
   margin: 0 0 0.4rem;
 }
 .results p {
-  margin: 0;
+  margin: 0 0 1rem;
   color: var(--muted);
   font-size: 0.98rem;
 }
