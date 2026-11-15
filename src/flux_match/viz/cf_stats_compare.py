@@ -378,6 +378,7 @@ def make_summary_box_figure(
                 line={"color": color},
                 boxpoints=False,
                 showlegend=False,
+                hoverinfo="x",
             )
         )
     fig.update_layout(
