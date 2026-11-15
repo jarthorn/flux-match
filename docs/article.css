@@ -88,10 +88,17 @@ a:hover { text-decoration-thickness: 2px; }
 .results h3 {
   font-size: 1.1rem;
   font-weight: 600;
-  margin: 0 0 0.4rem;
+  margin: 0 0 0.25rem;
 }
 .results h3 a { text-decoration: none; }
 .results h3 a:hover { text-decoration: underline; }
+.results .pub-date {
+  display: block;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
 .results p {
   margin: 0;
   color: var(--muted);
