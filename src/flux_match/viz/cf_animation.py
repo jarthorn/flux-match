@@ -493,13 +493,18 @@ def build_animation(
     print(f"Reading {generation_type} capacity factors for {year} from {cf_path}...")
     frames = load_frames(cf_path, cells)
 
-    data_source_name = "CODERS" if wind_source == "coders" else "renewables.ninja"
     title = f"Hourly {generation_type} capacity factor, {year}"
-    data_source_link = "https://www.renewables.ninja/" if wind_source == "ninja" else "https://coders.cme-emh.ca/"
+    if wind_source == "ninja":
+      data_source_link = "https://www.renewables.ninja/"
+      data_source_name = "renewables.ninja"
+    else:
+      data_source_link = "https://coders.cme-emh.ca/"
+      data_source_name = "CODERS"
     intro_text = (
-      f"This animation shows the hourly capacity factor of {generation_type} generation in {year}. "
-      f"Map grid colors show the estimated actual capacity of a generator based at each map cell, for each hour of the year, "
-      f"as a proportion of its nameplate capacity. Historical weather data from {year} are used in the calculation. "
+      f"This animation shows the hourly capacity factor of {generation_type} generation in "
+      f"{year}. Map grid colors show the estimated actual capacity of a generator based "
+      f"at each map cell, for each hour of the year, as a proportion of its nameplate capacity. "
+      f"Historical weather data from {year} are used in the calculation. "
       f"The data source is <a href=\"{data_source_link}\">{data_source_name}</a>."
     )
 
