@@ -11,7 +11,7 @@ demand_years = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
 # Wind/solar capacity-factor tables are published per year; CODERS currently has 2021.
 capacity_factor_years = [2025]
 # Where the wind capacity factors come from: "coders" (CODERS) or "ninja" (renewables.ninja).
-wind_source = "coders"
+wind_source = "ninja"
 
 [fetch.ninja]
 # Settings for wind_source = "ninja", which downloads hourly wind output for every grid cell from
@@ -27,12 +27,12 @@ max_requests_per_hour = 50
 
 [selection]
 # Total solar capacity per balancing area, as a fraction of annual demand
-solar_capacity_ratio = 2
+solar_capacity_ratio = 0.5
 # Total wind capacity per balancing area, as a fraction of annual demand
-wind_capacity_ratio = 3
+wind_capacity_ratio = 2
 
-max_wind_capacity_mw_per_cell = 3000
-max_solar_capacity_mw_per_cell = 3000
+max_wind_capacity_mw_per_cell = 2500
+max_solar_capacity_mw_per_cell = 2500
 
 [selection.greedy]
 # The ranking metric for selecting sites. One of ["median_daily_capacity", "annual_capacity"]
@@ -47,6 +47,6 @@ bess_initial_soc = 0.0
 # energy stored = energy drawn * efficiency. Discharge is lossless.
 bess_rte = 0.88
 # Total battery storage capacity, as a fraction of average daily demand in most recent year
-bess_capacity_ratio = 1
+bess_capacity_ratio = 0.5
 # Duration of bess storage in hours. Derive maximum power as capacity / duration.
 bess_duration = 4
