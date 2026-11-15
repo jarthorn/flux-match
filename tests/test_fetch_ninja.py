@@ -427,9 +427,10 @@ class CollateTest(NinjaTestCase):
         self.assertEqual(rows[1], ["1", "0.5", "0.250005", "1"])
         self.assertEqual(rows[-1], ["8760", "0.5", "0.250005", "1"])
         self.assertEqual([r[0] for r in rows[1:]], [str(h) for h in range(1, 8761)])
-        self.assertIn("writing wind_capacity_factor_2025.csv from 3 of 3 cells", out)
+        self.assertIn("writing wind_capacity_factor_2025.csv from 3 cells", out)
         self.assertEqual(err, "")
         self.assertEqual(list(self.ninja_dir.glob("*.tmp")), [])
+        self.assertEqual(list(self.ninja_dir.glob("*.old")), [])
 
     def test_grid_order_decides_column_order_not_download_order(self):
         self.write_grid(3)
@@ -439,26 +440,27 @@ class CollateTest(NinjaTestCase):
         self.collate()
         self.assertEqual(self.output()[1], ["1", "0.1", "0.2", "0.3"])
 
-    def test_missing_cells_are_zero_with_a_warning(self):
+    def test_missing_cells_leave_existing_collated_file_untouched(self):
+        dest = collated_path(YEAR)
+        dest.write_text("complete download from elsewhere\n")
         self.write_raw(2, ninja_csv(value="50000"))
         out, err = self.collate()
 
-        rows = self.output()
-        self.assertEqual(rows[0], ["h", "1", "2", "3"])
-        self.assertEqual(rows[1], ["1", "0", "0.5", "0"])
-        self.assertEqual(rows[-1], ["8760", "0", "0.5", "0"])
-        self.assertIn("from 1 of 3 cells", out)
-        self.assertIn("2 of 3 cells have no NINJA data yet", err)
+        self.assertEqual(dest.read_text(), "complete download from elsewhere\n")
+        self.assertIn("2 of 3 raw files still missing", out)
+        self.assertIn(f"not updating {dest.name}", out)
+        self.assertEqual(err, "")
 
     def test_nothing_is_written_without_any_raw_files(self):
         out, err = self.collate()
-        self.assertIn("no raw files yet", out)
+        self.assertIn("3 of 3 raw files still missing", out)
         self.assertEqual(err, "")
         self.assertFalse(collated_path(YEAR).exists())
 
     def test_hours_are_read_across_chunk_boundaries(self):
         self.write_raw(1, indexed_csv())
         self.write_raw(2, indexed_csv(scale=2))
+        self.write_raw(3, ninja_csv(value="0"))
         self.collate()
         rows = self.output()
         for h in (1, 2, CHUNK_ROWS, CHUNK_ROWS + 1, 2 * CHUNK_ROWS + 1, 4000, 8760):
@@ -467,11 +469,14 @@ class CollateTest(NinjaTestCase):
 
     def test_every_row_matches_its_source_hour(self):
         self.write_raw(1, indexed_csv())
+        self.write_raw(2, ninja_csv(value="0"))
+        self.write_raw(3, ninja_csv(value="0"))
         self.collate()
         values = [float(r[1]) * CAPACITY_KW for r in self.output()[1:]]
         self.assertEqual([round(v) for v in values], list(range(8760)))
 
     def test_leap_day_is_dropped_and_later_hours_renumbered(self):
+        self.write_grid(2)
         self.write_raw(1, indexed_csv(2024), 2024)
         self.write_raw(2, ninja_csv(2024, value="50000"), 2024)
         self.collate(2024)
@@ -501,17 +506,19 @@ class CollateTest(NinjaTestCase):
         self.collate()
         self.assertEqual(self.output()[0], ["h", "1", "2", "3"])
 
-    def test_new_raw_file_replaces_zeros_on_the_next_collate(self):
-        self.write_raw(1, ninja_csv(value="50000"))
-        _, err = self.collate()
-        self.assertIn("2 of 3 cells", err)
+    def test_collate_runs_only_once_every_raw_file_is_present(self):
         dest = collated_path(YEAR)
-        old = dest.stat().st_mtime
-        os.utime(dest, (old - 100, old - 100))
+        self.write_raw(1, ninja_csv(value="50000"))
+        self.write_raw(2, ninja_csv(value="0"))
+        out, err = self.collate()
+        self.assertIn("1 of 3 raw files still missing", out)
+        self.assertFalse(dest.exists())
+        self.assertEqual(err, "")
 
         self.write_raw(3, ninja_csv(value="100000"))
-        _, err = self.collate()
-        self.assertIn("1 of 3 cells", err)
+        out, err = self.collate()
+        self.assertIn("writing wind_capacity_factor_2025.csv from 3 cells", out)
+        self.assertEqual(err, "")
         self.assertEqual(self.output()[1], ["1", "0.5", "0", "1"])
 
     def test_incomplete_or_malformed_raw_files_fail_without_output(self):
@@ -526,22 +533,46 @@ class CollateTest(NinjaTestCase):
             with self.subTest(message=message):
                 self.write_raw(1, ninja_csv())
                 self.write_raw(2, body)
+                self.write_raw(3, ninja_csv())
                 with self.assertRaisesRegex(DataError, message):
                     self.collate()
                 self.assertEqual(list(self.ninja_dir.glob("wind_capacity_factor*")), [])
+
+    def test_write_failure_restores_the_previous_collated_file(self):
+        for n in (1, 2, 3):
+            self.write_raw(n, ninja_csv(value="50000"))
+        self.collate()
+        dest = collated_path(YEAR)
+        previous = dest.read_text()
+        self.write_raw(2, ninja_csv(value="-5"))
+        old = dest.stat().st_mtime
+        os.utime(dest, (old - 100, old - 100))
+
+        with self.assertRaisesRegex(DataError, r"wind_2\.csv hour 1: electricity -5"):
+            self.collate()
+        self.assertEqual(dest.read_text(), previous)
+        self.assertEqual(list(self.ninja_dir.glob("*.old")), [])
+        self.assertEqual(list(self.ninja_dir.glob("*.tmp")), [])
 
     def test_gap_in_hours_fails(self):
         lines = ninja_csv().decode().splitlines()
         del lines[5000]
         self.write_raw(1, ("\n".join(lines) + "\n").encode())
+        self.write_raw(2, ninja_csv())
+        self.write_raw(3, ninja_csv())
         with self.assertRaisesRegex(DataError, r"wind_1\.csv hour 5000: expected time"):
             self.collate()
 
     def test_empty_raw_file_counts_as_missing(self):
+        dest = collated_path(YEAR)
+        dest.write_text("keep me\n")
         self.write_raw(1, ninja_csv(value="50000"))
         self.write_raw(2, b"")
-        _, err = self.collate()
-        self.assertIn("2 of 3 cells have no NINJA data", err)
+        self.write_raw(3, ninja_csv(value="0"))
+        out, err = self.collate()
+        self.assertIn("1 of 3 raw files still missing", out)
+        self.assertEqual(dest.read_text(), "keep me\n")
+        self.assertEqual(err, "")
 
 
 class ReadCellsTest(NinjaTestCase):

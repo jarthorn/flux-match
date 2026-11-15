@@ -222,7 +222,7 @@ class PreprocessRunTest(TempDirTest):
             run(ctx, hours_in_year=HOURS)
 
     def test_run_uses_configured_capacity_factor_year(self) -> None:
-        ctx = self.make_ctx()
+        ctx = self.make_ctx("coders")
         self.run_step(ctx)
         rows = read_csv(paths.vre_hourly_path(ctx), VRE_HOURLY_COLUMNS)
         self.assertEqual(len(rows), HOURS)

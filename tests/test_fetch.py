@@ -393,14 +393,14 @@ class FetchTest(unittest.TestCase):
         # The CODERS rankings are a separate file, not built for this wind source.
         self.assertFalse(self.rankings.exists())
 
-    def test_ninja_partial_download_is_collated_but_no_rankings_exist_afterwards(self):
+    def test_ninja_partial_download_skips_collation_and_leaves_rankings_alone(self):
         self.ninja_rankings.write_text("from an earlier, complete download\n")
         stopped = FetchIncompleteError("rate limit")
         with self.assertRaises(FetchIncompleteError) as caught:
             self._run_ninja(side_effect=stopped)
         self.assertIs(caught.exception, stopped)
-        self.collate.assert_called_once()
-        self.assertFalse(self.ninja_rankings.exists())
+        self.collate.assert_not_called()
+        self.assertEqual(self.ninja_rankings.read_text(), "from an earlier, complete download\n")
 
     def test_ninja_errors_other_than_the_rate_limit_skip_collation(self):
         with self.assertRaisesRegex(DataError, "bad token"):

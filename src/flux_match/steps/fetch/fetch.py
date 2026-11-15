@@ -28,16 +28,17 @@ fetch.wind_source is, so the CODERS wind table is there as a backup for NINJA's,
 to download. Wind capacity factors used by later steps come from the source named by
 fetch.wind_source. Only with "ninja" does the step also download per-cell wind output from
 renewables.ninja into data/ninja/raw/ and collate it into data/ninja/wind_capacity_factor_<year>.csv
-(see fetch_ninja.py). Cells not downloaded yet are filled with 0 in the collated file, so a
-download that stopped early at NINJA's rate limit can still be inspected, but the run then fails
-before deriving anything from it. Solar capacity factors always come from CODERS.
+(see fetch_ninja.py). Collation waits until every cell is downloaded, so a rate-limited stop
+leaves an existing collated file (for example one downloaded separately) untouched; the run then
+fails before deriving rankings from an incomplete download. Solar capacity factors always come
+from CODERS.
 
 Finally, the step derives data/grid_cell_rankings_<wind source>.csv from grid_cell_info and the
 capacity-factor tables (see grid_cell_rankings.py). It is rebuilt when missing or older than any
 of its inputs. Each wind source has its own file, and the NINJA one is only built once its
-download is complete (and removed again if a later download stops early), so later steps fail
-on the missing file rather than use incomplete NINJA data. The rankings are derived from one
-capacity-factor year, so exactly one must be configured.
+download and collation are complete, so later steps fail on the missing file rather than use
+incomplete NINJA data. The rankings are derived from one capacity-factor year, so exactly one must
+be configured.
 
 paths.wind_capacity_factor_path() is how later steps find the wind table for the configured
 source. It fails if the table is missing.
@@ -59,7 +60,7 @@ from flux_match.balancing_area_demand import (
     write_hourly_ba_demand,
 )
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError, FetchIncompleteError, report_data_error
+from flux_match.errors import ConfigError, DataError, report_data_error
 from flux_match.grid_cell_rankings import write_grid_cell_rankings
 from flux_match.schema import HOURS_PER_YEAR
 
@@ -138,17 +139,8 @@ def _fetch_ninja_wind(
     ninja = fetch_ninja.NinjaParams.from_config(fetch_config.section("ninja"))
     (year,) = params.capacity_factor_years
     grid_cell_info = paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE)
-    stopped = None
-    try:
-        fetch_ninja.download(ninja, year, grid_cell_info, environ=environ, opener=opener)
-    except FetchIncompleteError as e:
-        stopped = e  # still collate what was downloaded, then fail the run
+    fetch_ninja.download(ninja, year, grid_cell_info, environ=environ, opener=opener)
     fetch_ninja.collate(ninja, year, grid_cell_info)
-    if stopped:
-        # The collated table is now partial (zero-filled), so rankings built from an earlier,
-        # complete download (e.g. other turbine settings) no longer match it.
-        paths.grid_cell_rankings_path("ninja").unlink(missing_ok=True)
-        raise stopped
 
 
 def _write_rankings(fetch_config: Config, params: FetchParams) -> None:

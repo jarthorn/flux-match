@@ -18,9 +18,10 @@ data folder, so the limit also counts requests made by earlier runs.
 collate() then combines the raw files into `data/ninja/wind_capacity_factor_<year>.csv`, laid out
 like CODERS' wind_capacity_factor table: an `h` column (hour 1-8760) and one column per grid cell,
 in grid_cell_info order, holding the capacity factor (electricity / CAPACITY_KW). February 29 is
-dropped in leap years. Cells without a raw file yet are filled with 0 and counted in a warning,
-so a partial download can be inspected; it is rebuilt when a raw file is newer. fetch.py only
-derives anything from it once the download is complete.
+dropped in leap years. Collation runs only when every cell has a raw file; an existing collated
+file is left alone while the download is still incomplete, and is rebuilt when a raw file is
+newer. When rebuilding, the old file is renamed aside and removed only after the new one is
+written successfully, so a write failure cannot delete a usable download.
 The file is far too big to build in memory, so it is written CHUNK_ROWS hours at a time, reading
 only that slice of each raw file.
 """
@@ -43,7 +44,7 @@ from urllib.request import Request, urlopen
 
 from flux_match import paths
 from flux_match.config import Config
-from flux_match.errors import ConfigError, DataError, FetchIncompleteError, report_data_error
+from flux_match.errors import ConfigError, DataError, FetchIncompleteError
 from flux_match.schema import HOURS_PER_YEAR
 from flux_match.steps.fetch.fetch import (
     _already_present,
@@ -234,11 +235,12 @@ def download(
     missing = [
         (c, raw_path(directory, c)) for c in cells if not _already_present(raw_path(directory, c))
     ]
-    print(
-        f"NINJA wind: {len(cells) - len(missing)} of {len(cells)} cells already downloaded "
-        f"({directory.relative_to(paths.NINJA_DATA_DIR)})",
-        flush=True,
-    )
+    if len(cells) != len(missing):
+        print(
+            f"NINJA wind: {len(cells) - len(missing)} of {len(cells)} cells already downloaded "
+            f"({directory.relative_to(paths.NINJA_DATA_DIR)})",
+            flush=True,
+        )
     if not missing:
         return
     token = _api_token(environ)
@@ -424,33 +426,33 @@ def collated_path(year: int) -> Path:
 
 
 def collate(params: NinjaParams, year: int, grid_cell_info: Path) -> None:
-    """Write wind_capacity_factor_<year>.csv from the raw files downloaded so far.
+    """Write wind_capacity_factor_<year>.csv once every cell has a raw file.
 
-    Skipped if there are no raw files, or the output is newer than all of them. Cells that have
-    no raw file are filled with capacity factor 0 and reported in a warning.
+    Skipped if any raw file is missing (an existing collated file is left untouched), or if the
+    output is newer than all raw files.
     """
     cells = read_cells(grid_cell_info)
     directory = raw_dir(params, year)
     dest = collated_path(year)
-    present = [c for c in cells if _already_present(raw_path(directory, c))]
-    if not present:
-        print(f"NINJA wind: no raw files yet, not writing {dest.name}", flush=True)
+    raw_paths = [raw_path(directory, c) for c in cells]
+    missing = sum(1 for p in raw_paths if not _already_present(p))
+    if missing:
+        print(
+            f"NINJA wind: {missing} of {len(cells)} raw files still missing, "
+            f"not updating {dest.name}",
+            flush=True,
+        )
         return
-    if _up_to_date(dest, [raw_path(directory, c) for c in present]):
+    if _up_to_date(dest, raw_paths):
         print(f"NINJA wind: {dest.name} is up to date", flush=True)
         return
     print(
-        f"writing {dest.name} from {len(present)} of {len(cells)} cells "
+        f"writing {dest.name} from {len(cells)} cells "
         f"({directory.relative_to(paths.NINJA_DATA_DIR)})",
         flush=True,
     )
-    readers = {c.grid_cell: _RawReader(raw_path(directory, c)) for c in present}
+    readers = {c.grid_cell: _RawReader(p) for c, p in zip(cells, raw_paths, strict=True)}
     _write_collated(dest, cells, readers, year)
-    if len(present) < len(cells):
-        report_data_error(
-            f"{dest.name}: {len(cells) - len(present)} of {len(cells)} cells have no NINJA data "
-            f"yet and are filled with capacity factor 0; rerun the fetch to download them"
-        )
 
 
 def _expected_times(year: int) -> list[str]:
@@ -465,28 +467,41 @@ def _write_collated(
     dest: Path, cells: list[Cell], readers: dict[str, _RawReader], year: int
 ) -> None:
     """Write the table CHUNK_ROWS rows at a time: each chunk reads that slice of every raw file
-    into memory, writes it, and is dropped. Written to a temporary file, then renamed."""
+    into memory, writes it, and is dropped.
+
+    An existing `dest` is renamed aside first and unlinked only after the new file is written, so
+    a write error cannot delete a usable collated file.
+    """
     times = _expected_times(year)
     skip_leap_day = calendar.isleap(year)
-    zeros = ["0"] * CHUNK_ROWS
+    backup = dest.with_name(dest.name + ".old")
     tmp = dest.with_name(dest.name + ".tmp")
+    had_backup = False
     try:
+        if dest.is_file():
+            # Drop a leftover from a previous failed run before renaming the current file.
+            backup.unlink(missing_ok=True)
+            dest.replace(backup)
+            had_backup = True
         with tmp.open("w", newline="") as out:
             writer = csv.writer(out)
             writer.writerow(["h", *(c.grid_cell for c in cells)])
             for first in range(0, HOURS_PER_YEAR, CHUNK_ROWS):
                 chunk_times = times[first : first + CHUNK_ROWS]
                 columns = [
-                    readers[c.grid_cell].read(chunk_times, first, skip_leap_day)
-                    if c.grid_cell in readers
-                    else zeros
-                    for c in cells
+                    readers[c.grid_cell].read(chunk_times, first, skip_leap_day) for c in cells
                 ]
                 for i in range(len(chunk_times)):
                     writer.writerow([first + i + 1, *(column[i] for column in columns)])
         for reader in readers.values():
             reader.check_finished()
         tmp.replace(dest)
+        if had_backup:
+            backup.unlink(missing_ok=True)
+    except BaseException:
+        if had_backup and backup.is_file() and not _already_present(dest):
+            backup.replace(dest)
+        raise
     finally:
         tmp.unlink(missing_ok=True)
 
