@@ -44,14 +44,6 @@ FILENAME_RE = re.compile(
     r"(?P<source>coders|ninja)-(?P<timestamp>\d{8}-\d{4})$"
 )
 
-QUARTILE_ROWS = (
-    ("min", "Minimum"),
-    ("p25", "25th percentile"),
-    ("median", "Median"),
-    ("p75", "75th percentile"),
-    ("max", "Maximum"),
-)
-
 INTRO_TEMPLATE = (
     "This report compares capacity factor data across two datasets. Each source dataset contains "
     "the hourly capacity factor for a single variable renewable energy source (wind or solar) "
@@ -64,7 +56,7 @@ INTRO_TEMPLATE = (
 
 CONCLUSION_TEMPLATE = (
     "Summarize the main differences between Sample A and Sample B here. Note patterns in "
-    "the quartile table and the time-series charts for {balancing_area} and all cells."
+    "the summary box plot and the time-series charts for {balancing_area} and all cells."
 )
 
 PAGE_TEMPLATE = """\
@@ -159,42 +151,6 @@ PAGE_TEMPLATE = """\
       display: inline;
       margin: 0 1.25rem 0 0.35rem;
     }
-    .table-wrap {
-      overflow-x: auto;
-      margin: 0 0 2rem;
-      border: 1px solid var(--rule);
-      border-radius: 4px;
-      background: var(--panel);
-      box-shadow: 0 1px 0 rgba(26, 31, 36, 0.04);
-    }
-    table.summary {
-      width: 100%;
-      border-collapse: collapse;
-      font-family: ui-sans-serif, system-ui, sans-serif;
-      font-variant-numeric: tabular-nums;
-      font-size: 0.9rem;
-    }
-    table.summary th,
-    table.summary td {
-      padding: 0.65rem 0.85rem;
-      text-align: right;
-      border-bottom: 1px solid var(--rule);
-    }
-    table.summary th:first-child,
-    table.summary td:first-child {
-      text-align: left;
-      font-weight: 600;
-    }
-    table.summary thead th {
-      background: #f3f0ea;
-      font-weight: 600;
-      font-size: 0.82rem;
-      letter-spacing: 0.01em;
-      color: var(--muted);
-      border-bottom: 1px solid var(--rule);
-    }
-    table.summary tbody tr:last-child td { border-bottom: none; }
-    table.summary tbody tr:nth-child(even) td { background: #faf8f4; }
     .chart {
       background: var(--panel);
       border: 1px solid var(--rule);
@@ -226,12 +182,11 @@ PAGE_TEMPLATE = """\
     </div>
 
     <h2>Descriptive Statistics Summary</h2>
-    <p>
-       The following table summarizes the distribution of hourly standard deviations for each sample
+    <p class="section-body">
+       The following box plot compares the distribution of hourly standard deviations for each
+       sample, for __BA_LABEL__ and across all cells.
     </p>
-    <div class="table-wrap">
-      __TABLE__
-    </div>
+    <div class="chart">__CHART_SUMMARY__</div>
 
     <h2>Graphs</h2>
     <h3>Capacity factor standard deviation in __BA_LABEL__</h3>
@@ -239,7 +194,8 @@ PAGE_TEMPLATE = """\
        The following chart shows the standard deviation of the capacity factor across cells in a
        single balancing area, per hour of the year. British Columbia is chosen here because it is
        a large geographical area where we should expect variation in wind patterns across the
-       province in any given hour, from the windy coast to the interior where there is much less wind.
+       province in any given hour, from the windy coast to the interior where there is
+       much less wind.
        For solar capacity factor, we should see variation during daylight hours as the sun passes
        over the province, but zero variation overnight.
     </p>
@@ -393,47 +349,50 @@ def quartile_stats(values: Sequence[float]) -> dict[str, float]:
     }
 
 
-def format_stat(value: float) -> str:
-    return f"{value:.6f}"
-
-
 def hours_to_day_of_year(hours: Sequence[int]) -> list[float]:
     """Map hour 1..8760 to a continuous day-of-year coordinate (hour 1 -> 1.0)."""
     return [(h - 1) / HOURS_PER_DAY + 1.0 for h in hours]
 
 
-def summary_table_html(
+def make_summary_box_figure(
     sample_a: SampleSeries,
     sample_b: SampleSeries,
     balancing_area: str = BALANCING_AREA,
-) -> str:
-    stats = {
-        "a_ba": quartile_stats(sample_a.balancing_area),
-        "b_ba": quartile_stats(sample_b.balancing_area),
-        "a_all": quartile_stats(sample_a.all_cells),
-        "b_all": quartile_stats(sample_b.all_cells),
-    }
-    header = (
-        "<thead><tr>"
-        "<th>Metric</th>"
-        f"<th>Sample A · {balancing_area}</th>"
-        f"<th>Sample B · {balancing_area}</th>"
-        "<th>Sample A · All Cells</th>"
-        "<th>Sample B · All Cells</th>"
-        "</tr></thead>"
-    )
-    rows: list[str] = []
-    for key, label in QUARTILE_ROWS:
-        rows.append(
-            "<tr>"
-            f"<td>{label}</td>"
-            f"<td>{format_stat(stats['a_ba'][key])}</td>"
-            f"<td>{format_stat(stats['b_ba'][key])}</td>"
-            f"<td>{format_stat(stats['a_all'][key])}</td>"
-            f"<td>{format_stat(stats['b_all'][key])}</td>"
-            "</tr>"
+) -> go.Figure:
+    """Horizontal box plots of hourly std for both samples and both scopes."""
+    # First trace is drawn at the bottom; reverse so Sample A · BA is on top.
+    series = [
+        (f"Sample A · {balancing_area}", sample_a.balancing_area, SAMPLE_COLORS["A"]),
+        (f"Sample B · {balancing_area}", sample_b.balancing_area, SAMPLE_COLORS["B"]),
+        ("Sample A · All Cells", sample_a.all_cells, SAMPLE_COLORS["A"]),
+        ("Sample B · All Cells", sample_b.all_cells, SAMPLE_COLORS["B"]),
+    ]
+    fig = go.Figure()
+    for label, values, color in reversed(series):
+        fig.add_trace(
+            go.Box(
+                x=list(values),
+                name=label,
+                orientation="h",
+                marker_color=color,
+                line={"color": color},
+                boxpoints=False,
+                showlegend=False,
+            )
         )
-    return f'<table class="summary">{header}<tbody>{"".join(rows)}</tbody></table>'
+    fig.update_layout(
+        margin={"l": 160, "r": 24, "t": 16, "b": 40},
+        xaxis={
+            "title": "Population std (capacity factor)",
+            "showgrid": True,
+            "gridcolor": "#e6ebef",
+            "zeroline": False,
+        },
+        yaxis={"automargin": True},
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+    )
+    return fig
 
 
 def _series_trace(
@@ -508,6 +467,7 @@ def render_report(
     balancing_area: str = BALANCING_AREA,
 ) -> str:
     """Build the full HTML page string."""
+    fig_summary = make_summary_box_figure(sample_a, sample_b, balancing_area)
     fig_ba = make_comparison_figure(
         sample_a,
         sample_b,
@@ -520,8 +480,16 @@ def render_report(
         series_attr="all_cells",
         title="Canada — hourly standard deviation",
     )
-    chart_ba = fig_ba.to_html(
+    chart_summary = fig_summary.to_html(
         include_plotlyjs="cdn",
+        full_html=False,
+        div_id="chart-summary",
+        default_width="100%",
+        default_height="320px",
+        config={"responsive": True},
+    )
+    chart_ba = fig_ba.to_html(
+        include_plotlyjs=False,
         full_html=False,
         div_id="chart-ba",
         default_width="100%",
@@ -541,8 +509,8 @@ def render_report(
         "SAMPLE_A": sample_a.meta.meta_list_html(),
         "SAMPLE_B": sample_b.meta.meta_list_html(),
         "INTRO": INTRO_TEMPLATE.format(balancing_area=balancing_area),
-        "TABLE": summary_table_html(sample_a, sample_b, balancing_area),
         "BA_LABEL": balancing_area,
+        "CHART_SUMMARY": chart_summary,
         "CHART_BA": chart_ba,
         "CHART_ALL": chart_all,
         "CONCLUSION": CONCLUSION_TEMPLATE.format(balancing_area=balancing_area),
