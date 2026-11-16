@@ -41,7 +41,6 @@ p {
 .lede {
   font-size: 1.1rem;
   color: var(--muted);
-  max-width: 42rem;
   margin: 0 0 1.5rem;
 }
 .muted { color: var(--muted); }

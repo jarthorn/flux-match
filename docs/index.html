@@ -12,22 +12,49 @@
     <p>
       Flux Match is a simple dispatch model that simulates variable generation
       (wind, solar, and batteries) against historical hourly electricity demand
-      across Canadian balancing areas. Generation is based on a hypothetical
-      allocation of sites chosen from map grid cells; the model measures how
-      well those choices cover real demand curves. It is deliberately
-      simplistic—it excludes economics, grid connection costs, and other
-      real-world constraints—and is meant for exploring site-selection
-      strategies rather than producing operational forecasts.
+      across Canadian balancing areas. Balancing areas represent grid planning regions,
+      which in most cases correspond to a single province, with Ontario and Quebec
+      split into two balancing areas each. Generation is based on a hypothetical
+      allocation of wind and solar sites chosen from map grid cells; the model measures
+      how well those choices cover real demand curves. The model is deliberately
+      simplistic: it excludes economic factors such as grid connection costs,
+      and excludes other energy sources such as fossil fuels, hydro, and nuclear.
+      The model's purpose is to focus on the variability of wind and solar power,
+      and how site selection strategies can be used to mitigate variability and
+      better match variable supply with demand.
     </p>
     <p class="muted">
       Demand and capacity-factor data come from the
-      <a href="https://coders.cme-emh.ca/">CODERS</a> database.
+      <a href="https://coders.cme-emh.ca/">CODERS</a> database, unless otherwise noted.
       Source code is on
       <a href="https://github.com/jarthorn/flux-match">GitHub</a>.
     </p>
 
     <h2>Results</h2>
     <ul class="results">
+      <li>
+        <h3><a href="vary-bess-capacity-renewables-ninja.html">Varying BESS capacity (renewables.ninja wind data)</a></h3>
+        <time class="pub-date" datetime="2026-11-15">November 15, 2026</time>
+        <p>
+          An experiment that varies battery energy storage (BESS) capacity in each
+          balancing area as a ratio of average daily demand and plots the
+          effect on net demand, curtailment, and satisfied demand hours.
+          Wind capacity factor data are taken from
+          <a href="https://www.renewables.ninja/">renewables.ninja</a>.
+        </p>
+      </li>
+      <li>
+        <h3><a href="vary-capacity-ratio-renewables-ninja.html">Varying VRE capacity ratios (renewables.ninja wind data)</a></h3>
+        <time class="pub-date" datetime="2026-11-15">November 15, 2026</time>
+        <p>
+          An experiment that varies solar and wind nameplate capacity in each
+          balancing area (as a ratio of average hourly demand) and plots the
+          effect on net demand, curtailment, and satisfied demand hours, using
+          a greedy annual-capacity site selection strategy.
+          Wind capacity factor data are taken from
+          <a href="https://www.renewables.ninja/">renewables.ninja</a>.
+        </p>
+      </li>
       <li>
         <h3><a href="vary-bess-capacity.html">Varying BESS capacity (CODERS wind data)</a></h3>
         <time class="pub-date" datetime="2026-11-09">November 9, 2026</time>
@@ -45,7 +72,7 @@
         </p>
       </li>
       <li>
-        <h3><a href="vary-capacity-ratio.html">Varying VRE capacity ratios</a></h3>
+        <h3><a href="vary-capacity-ratio.html">Varying VRE capacity ratios (CODERS wind data)</a></h3>
         <time class="pub-date" datetime="2026-11-05">November 5, 2026</time>
         <p>
           An experiment that varies solar and wind nameplate capacity in each

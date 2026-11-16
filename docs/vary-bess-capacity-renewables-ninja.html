@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flux Match Experiment: Varying BESS Capacity</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="stylesheet" href="article.css">
+</head>
+<body>
+  <main>
+    <h1>Flux Match Experiment: Varying BESS Capacity</h1>
+    <p class="lede">
+      In this experiment, we vary battery energy storage (BESS) capacity in each balancing area across Canada,
+      and observe the impact on net demand, curtailment, and satisfied demand hours. The BESS capacity ratio
+      is the ratio of battery energy capacity to the area's average daily demand. Battery power rating is
+      capacity divided by duration (hours). Wind and solar capacity ratios are held
+      fixed. Results are averaged across all balancing areas in Canada. Results are calculated using
+      <a href="https://github.com/jarthorn/flux-match">Flux Match</a>, a very simple dispatch model for the
+      Canadian electricity system. Demand and solar capacity factors are taken from the
+      <a href="https://coders.cme-emh.ca/">CODERS</a> database; wind capacity factors are from
+      <a href="https://www.renewables.ninja/">renewables.ninja</a>.
+    </p>
+    <p>
+      Duration was also varied (4, 12, and 20&nbsp;h) in this experiment, but with constant capacity. As a
+      result, the duration increase was offset by an equivalent decrease on power rating (doubling duration
+      requires dropping the power rating by half). Because of this, storage duration increase has a negligible
+      effect on net demand, curtailment, and satisfied demand hours. The charts below show results for a 4-hour duration only.
+    </p>
+    <p>
+      The results show a clear improvement in net demand, curtailment, and satisfied demand hours as BESS
+      capacity rises from 0.5 toward about 1.5–2. With higher BESS capacity beyond that, there is a significant
+      dropoff in improvement. This suggests that building some initial BESS capacity is quite important for a
+      VRE-dominated system, but once there is enough BESS capacity to meet average daily demand, further
+      investment may be better spent on increasing VRE capacity than on BESS capacity.
+    </p>
+    <dl class="meta">
+      <dt>Batch</dt><dd>20261115-vary-bess-capacity-ninja</dd>
+      <dt>Runs</dt><dd>24 (capacity ratios 0.5–4 step 0.5 × durations 4/12/20h); charts use duration = 4h</dd>
+      <dt>Strategy</dt><dd>greedy / annual_capacity</dd>
+      <dt>Dispatch years</dt><dd>2022–2024</dd>
+      <dt>VRE</dt><dd>solar capacity ratio: 0.5, wind capacity ratio: 2</dd>
+      <dt>BESS</dt><dd>round trip efficiency: 88%</dd>
+      <dt>Wind capacity factor source</dt><dd><a href="https://www.renewables.ninja/">renewables.ninja</a></dd>
+    </dl>
+
+    <div class="chart"><div id="chart-net-demand" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-curtailment" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-satisfied" class="chart-wrap"></div></div>
+  </main>
+
+  <script>
+    // Embedded from summary.csv (bess_duration = 4 only):
+    // [bess_capacity_ratio, net_demand_pct, curtailment_pct, satisfied_demand_hours_pct]
+    const rows = [
+      [0.5, 9.37, 23.12, 85.63],
+      [1, 6.71, 20.48, 90.83],
+      [1.5, 5.41, 19.12, 93.17],
+      [2, 4.65, 18.28, 94.58],
+      [2.5, 4.2, 17.73, 95.43],
+      [3, 3.94, 17.36, 95.91],
+      [3.5, 3.75, 17.05, 96.26],
+      [4, 3.59, 16.77, 96.55],
+    ];
+
+    const lineColor = "hsl(188, 55%, 38%)";
+
+    function traceFor(metricIndex) {
+      return [{
+        x: rows.map(r => r[0]),
+        y: rows.map(r => r[metricIndex]),
+        mode: "lines+markers",
+        name: "bess_duration = 4",
+        line: { color: lineColor, width: 2 },
+        marker: { size: 7 },
+      }];
+    }
+
+    const baseLayout = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "#fbfaf7",
+      font: { family: "ui-sans-serif, system-ui, sans-serif", color: "#1a1f24", size: 13 },
+      margin: { t: 48, r: 24, b: 56, l: 64 },
+      xaxis: {
+        title: { text: "BESS Capacity Ratio" },
+        dtick: 0.5,
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      yaxis: {
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      showlegend: false,
+      hovermode: "x unified",
+    };
+
+    const config = { responsive: true, displayModeBar: false };
+
+    function draw(divId, title, yTitle, metricIndex) {
+      Plotly.newPlot(
+        divId,
+        traceFor(metricIndex),
+        {
+          ...baseLayout,
+          title: { text: title, font: { size: 16 } },
+          yaxis: { ...baseLayout.yaxis, title: { text: yTitle } },
+        },
+        config
+      );
+    }
+
+    draw(
+      "chart-net-demand",
+      "Net Demand vs BESS Capacity Ratio (duration = 4h)",
+      "net_demand_pct (%)",
+      1
+    );
+    draw(
+      "chart-curtailment",
+      "Curtailment vs BESS Capacity Ratio (duration = 4h)",
+      "curtailment_pct (%)",
+      2
+    );
+    draw(
+      "chart-satisfied",
+      "Satisfied Demand Hours vs BESS Capacity Ratio (duration = 4h)",
+      "satisfied_demand_hours_pct (%)",
+      3
+    );
+  </script>
+</body>
+</html>
