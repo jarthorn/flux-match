@@ -1,0 +1,24 @@
+[fetch]
+provinces = [ "AB", "BC", "MB", "NB", "NL", "NS", "ON", "PE", "QC", "SK" ]
+demand_years = [ 2018, 2019, 2020, 2021, 2022, 2023, 2024 ]
+capacity_factor_years = [ 2025 ]
+wind_source = "ninja"
+[fetch.ninja]
+turbine_height = 105
+turbine_model = "Vestas V150 4500"
+request_sleep_s = 73
+max_requests_per_hour = 50
+
+[selection]
+max_wind_capacity_mw_per_cell = 2500
+max_solar_capacity_mw_per_cell = 2500
+strategy = "greedy"
+[selection.greedy]
+ranking_metric = "annual_capacity"
+
+[dispatch]
+dispatch_years = [ 2022, 2023, 2024 ]
+bess_initial_soc = 0.0
+bess_rte = 0.88
+bess_capacity_ratio = 0.5
+bess_duration = 4
