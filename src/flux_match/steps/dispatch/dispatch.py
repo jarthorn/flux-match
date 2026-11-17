@@ -1,4 +1,4 @@
-"""Step 4: hourly battery dispatch and net demand for each balancing area.
+"""Step 5: hourly battery dispatch and net demand for each balancing area.
 
 For each dispatch year, streams data/balancing_area_demand_hourly_<year>.csv (from fetch) and the
 run's vre_by_ba_hourly.csv (from postselect) in lockstep. Both are sorted by balancing area, then

@@ -16,6 +16,7 @@ from flux_match.steps import select
 from flux_match.steps.dispatch import dispatch
 from flux_match.steps.fetch import fetch
 from flux_match.steps.postselect import postselect
+from flux_match.steps.preselect import preselect
 
 DEFAULT_SCENARIO = "balanced"
 
@@ -66,6 +67,8 @@ def _cmd_all(args: argparse.Namespace) -> None:
     try:
         print("[fetch]")
         fetch.run(ctx.config)
+        print("[preselect]")
+        preselect.run(ctx.config)
         for step in RUN_STEPS:
             _run_step(ctx, step)
     finally:
@@ -76,6 +79,10 @@ def _cmd_all(args: argparse.Namespace) -> None:
 
 def _cmd_fetch(args: argparse.Namespace) -> None:
     fetch.run(Config.load(paths.scenario_path(args.scenario), overrides=_overrides(args)))
+
+
+def _cmd_preselect(args: argparse.Namespace) -> None:
+    preselect.run(Config.load(paths.scenario_path(args.scenario), overrides=_overrides(args)))
 
 
 def _cmd_step(args: argparse.Namespace) -> None:
@@ -116,7 +123,7 @@ def _parser() -> argparse.ArgumentParser:
             help="existing run folder; this step's outputs are overwritten in place",
         )
 
-    p = commands.add_parser("all", help="run steps 1-4 in a new run folder")
+    p = commands.add_parser("all", help="run steps 1-5 in a new run folder")
     add_scenario(p)
     add_config(p)
     p.add_argument(
@@ -135,7 +142,15 @@ def _parser() -> argparse.ArgumentParser:
     add_config(p)
     p.set_defaults(handler=_cmd_fetch)
 
-    p = commands.add_parser("select", help="step 2: select sites (new run folder unless --run)")
+    p = commands.add_parser(
+        "preselect",
+        help="step 2: grid-cell rankings into data/ (rebuilt when missing or older than inputs)",
+    )
+    add_scenario(p)
+    add_config(p)
+    p.set_defaults(handler=_cmd_preselect)
+
+    p = commands.add_parser("select", help="step 3: select sites (new run folder unless --run)")
     group = p.add_mutually_exclusive_group()
     add_scenario(group)
     add_run(group, required=False)
@@ -143,8 +158,8 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=_cmd_step)
 
     for step, help_text in [
-        ("postselect", "step 3: hourly wind and solar per balancing area"),
-        ("dispatch", "step 4: hourly battery dispatch and net demand"),
+        ("postselect", "step 4: hourly wind and solar per balancing area"),
+        ("dispatch", "step 5: hourly battery dispatch and net demand"),
     ]:
         p = commands.add_parser(step, help=help_text)
         add_run(p, required=True)

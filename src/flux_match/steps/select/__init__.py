@@ -1,4 +1,4 @@
-"""Step 2: select wind and solar sites with the strategy named in the [selection] table."""
+"""Step 3: select wind and solar sites with the strategy named in the [selection] table."""
 
 from flux_match import paths
 from flux_match.errors import ConfigError

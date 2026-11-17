@@ -29,16 +29,8 @@ to download. Wind capacity factors used by later steps come from the source name
 fetch.wind_source. Only with "ninja" does the step also download per-cell wind output from
 renewables.ninja into data/ninja/raw/ and collate it into data/ninja/wind_capacity_factor_<year>.csv
 (see fetch_ninja.py). Collation waits until every cell is downloaded, so a rate-limited stop
-leaves an existing collated file (for example one downloaded separately) untouched; the run then
-fails before deriving rankings from an incomplete download. Solar capacity factors always come
-from CODERS.
-
-Finally, the step derives data/grid_cell_rankings_<wind source>.csv from grid_cell_info and the
-capacity-factor tables (see grid_cell_rankings.py). It is rebuilt when missing or older than any
-of its inputs. Each wind source has its own file, and the NINJA one is only built once its
-download and collation are complete, so later steps fail on the missing file rather than use
-incomplete NINJA data. The rankings are derived from one capacity-factor year, so exactly one must
-be configured.
+leaves an existing collated file (for example one downloaded separately) untouched and fails the
+run. Solar capacity factors always come from CODERS.
 
 paths.wind_capacity_factor_path() is how later steps find the wind table for the configured
 source. It fails if the table is missing.
@@ -61,7 +53,6 @@ from flux_match.balancing_area_demand import (
 )
 from flux_match.config import Config
 from flux_match.errors import ConfigError, DataError, report_data_error
-from flux_match.grid_cell_rankings import write_grid_cell_rankings
 from flux_match.schema import HOURS_PER_YEAR
 
 GRID_CELL_TABLE = "grid_cell_info"
@@ -87,7 +78,7 @@ class FetchParams:
     def from_config(cls, params: Config) -> Self:
         capacity_factor_years = tuple(params.get_list("capacity_factor_years", int, unique=True))
         if len(capacity_factor_years) != 1:
-            # The rankings file is derived from a single year of capacity factors.
+            # Preselect rankings and later steps use a single year of capacity factors.
             raise ConfigError(
                 f"{params.source}: 'fetch.capacity_factor_years' must have exactly one year, "
                 f"got {list(capacity_factor_years)}"
@@ -121,11 +112,9 @@ def run(
     fetch_coders.download(params, environ=environ, opener=opener)
     _write_balancing_area_demand(params.demand_years)
     if params.wind_source == "ninja":
-        # Before the rankings, which are only built from a complete NINJA download. Can stop
-        # early at NINJA's rate limit and fail the run; the CODERS derivations above are in
-        # place when it does.
+        # Can stop early at NINJA's rate limit and fail the run; the CODERS derivations above
+        # are in place when it does.
         _fetch_ninja_wind(fetch_config, params, environ, opener)
-    _write_rankings(fetch_config, params)
 
 
 def _fetch_ninja_wind(
@@ -141,20 +130,6 @@ def _fetch_ninja_wind(
     grid_cell_info = paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE)
     fetch_ninja.download(ninja, year, grid_cell_info, environ=environ, opener=opener)
     fetch_ninja.collate(ninja, year, grid_cell_info)
-
-
-def _write_rankings(fetch_config: Config, params: FetchParams) -> None:
-    """Derive the rankings file for the wind source if it is missing or older than any of its
-    inputs. Reached for NINJA only once its download is complete."""
-    (year,) = params.capacity_factor_years
-    grid_cell_info = paths.csv_path(paths.CODERS_DATA_DIR, GRID_CELL_TABLE)
-    solar = paths.csv_path(paths.CODERS_DATA_DIR, SOLAR_CF_TABLE, year=year)
-    wind = paths.wind_capacity_factor_path(fetch_config)
-    dest = paths.grid_cell_rankings_path(params.wind_source)
-    if _up_to_date(dest, [grid_cell_info, solar, wind]):
-        return
-    print(f"writing {dest.name}", flush=True)
-    write_grid_cell_rankings(grid_cell_info, solar, wind, dest)
 
 
 def _write_balancing_area_demand(demand_years: Sequence[int]) -> None:

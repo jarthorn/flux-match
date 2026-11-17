@@ -1,4 +1,4 @@
-"""Step 3: hourly wind and solar generation per balancing area for the selected sites.
+"""Step 4: hourly wind and solar generation per balancing area for the selected sites.
 
 Joins selected_sites.csv with grid_cell_info balancing areas, multiplies each site's
 nameplate by its hourly capacity factor, and sums those MW values within each balancing

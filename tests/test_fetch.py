@@ -294,7 +294,6 @@ class FetchTest(unittest.TestCase):
             raise AssertionError("should not fetch when files are already local")
 
         self._run(opener, environ={})
-        self.assertTrue(self.rankings.is_file())
 
     def _write_cache(self) -> None:
         self.data_dir.mkdir()
@@ -308,30 +307,6 @@ class FetchTest(unittest.TestCase):
         (self.data_dir / "wind_capacity_factor_2021.csv").write_bytes(
             capacity_factor_csv(HOURS_PER_YEAR, "0.3")
         )
-
-    def test_rankings_written_after_downloads(self):
-        self._run(RecordingOpener(responses()))
-        rows = read_rows(self.rankings)
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["grid_cell"], "1")
-        self.assertAlmostEqual(float(rows[0]["annual_solar_capacity_factor"]), 0.2 * 8760)
-        self.assertAlmostEqual(float(rows[0]["annual_wind_capacity_factor"]), 0.3 * 8760)
-        self.assertEqual(rows[0]["ba_annual_solar_rank"], "1")
-
-    def test_rankings_rebuilt_only_when_older_than_an_input(self):
-        self._write_cache()
-        opener = RecordingOpener({})
-        self._run(opener, environ={})
-        self.rankings.write_text("sentinel\n")
-        newest_input = max(p.stat().st_mtime for p in self.data_dir.glob("*.csv"))
-
-        os.utime(self.rankings, (newest_input + 10, newest_input + 10))
-        self._run(opener, environ={})
-        self.assertEqual(self.rankings.read_text(), "sentinel\n")
-
-        os.utime(self.rankings, (newest_input - 10, newest_input - 10))
-        self._run(opener, environ={})
-        self.assertEqual(read_rows(self.rankings)[0]["grid_cell"], "1")
 
     def test_balancing_area_demand_step_runs_after_downloads(self):
         self._run(RecordingOpener(responses()))
@@ -370,7 +345,7 @@ class FetchTest(unittest.TestCase):
             self._run(RecordingOpener(responses()))
         download.assert_not_called()
         collate.assert_not_called()
-        self.assertTrue(self.rankings.is_file())
+        self.assertFalse(self.rankings.exists())
         self.assertFalse(self.ninja_rankings.exists())
 
     def test_ninja_wind_source_still_downloads_the_coders_wind_table_as_a_backup(self):
@@ -380,17 +355,15 @@ class FetchTest(unittest.TestCase):
         self.assertIn("wind_capacity_factor", tables)
         self.assertTrue((self.data_dir / "wind_capacity_factor_2021.csv").is_file())
 
-    def test_ninja_rankings_are_built_from_the_complete_ninja_table(self):
+    def test_complete_ninja_download_is_collated(self):
         self._run_ninja()
         grid_cell_info = self.data_dir / "grid_cell_info.csv"
         self.download.assert_called_once()
         args = self.download.call_args.args
         self.assertEqual(args[1:], (2021, grid_cell_info))
         self.collate.assert_called_once_with(args[0], 2021, grid_cell_info)
-        rows = read_rows(self.ninja_rankings)
-        self.assertAlmostEqual(float(rows[0]["annual_wind_capacity_factor"]), 0.4 * 8760)
-        self.assertAlmostEqual(float(rows[0]["annual_solar_capacity_factor"]), 0.2 * 8760)
-        # The CODERS rankings are a separate file, not built for this wind source.
+        # Rankings are the preselect step, not a side effect of a finished download.
+        self.assertFalse(self.ninja_rankings.exists())
         self.assertFalse(self.rankings.exists())
 
     def test_ninja_partial_download_skips_collation_and_leaves_rankings_alone(self):

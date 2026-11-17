@@ -113,8 +113,8 @@ def grid_cell_rankings_path(wind_source: str) -> Path:
 
 
 def grid_cell_rankings(ctx: RunContext) -> Path:
-    """The grid cell rankings for the run's fetch.wind_source. Fails if fetch has not built them
-    (for NINJA, that means its download is not complete)."""
+    """The grid cell rankings for the run's fetch.wind_source. Fails if preselect has not
+    built them (for NINJA, that also means fetch has not finished the download)."""
     from flux_match.errors import DataError
     from flux_match.steps.fetch.fetch import FetchParams
 
@@ -122,7 +122,7 @@ def grid_cell_rankings(ctx: RunContext) -> Path:
     path = grid_cell_rankings_path(wind_source)
     if not path.is_file():
         raise DataError(
-            f"{path} not found; run `flux-match fetch` with wind_source={wind_source!r}"
+            f"{path} not found; run `flux-match preselect` with wind_source={wind_source!r}"
         )
     return path
 
