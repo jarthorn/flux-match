@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flux Match Experiment: Varying Site Selection Strategy</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="stylesheet" href="article.css">
+</head>
+<body>
+  <main>
+    <h1>Flux Match Experiment: Varying Site Selection Strategy</h1>
+    <p class="lede">
+      In this experiment, wind, solar, and battery capacity are held fixed, and only the
+      site selection strategy changes. The charts below show net demand, satisfied
+      demand hours, and curtailment in each balancing area. Results are calculated using
+      <a href="https://github.com/jarthorn/flux-match">Flux Match</a>, a very simple dispatch
+      model for the Canadian electricity system. Demand and solar capacity factors are taken
+      from the <a href="https://coders.cme-emh.ca/">CODERS</a> database; wind capacity factors
+      are from <a href="https://www.renewables.ninja/">renewables.ninja</a>.
+    </p>
+    <dl class="strategies">
+      <dt>Greedy</dt>
+      <dd>
+        Within each balancing area, cells are filled in rank order up to 2500&nbsp;MW per cell
+        until the wind and solar targets are met. This run ranks cells by annual capacity factor.
+        It is the baseline: the strongest cells are taken first, with no attempt to separate sites
+        geographically or to match their hourly profiles.
+      </dd>
+      <dt>Cluster</dt>
+      <dd>
+        Each balancing area's cells are split into 10 geographic clusters with K-means, seeded
+        with 192837 and restarted 10 times. Coordinates are projected before clustering so a
+        degree of longitude is not treated as equal to a degree of latitude. Wind and solar are
+        then filled separately, in rounds. Each round takes the best remaining cell by annual
+        capacity factor from every cluster and sets the rest of that cluster aside until the next
+        round. Nearby cells are assumed to have similar hourly output, so spreading picks across
+        clusters is meant to reduce that correlation.
+      </dd>
+      <dt>TVCI</dt>
+      <dd>
+        Total Variation Complementarity Index. Wind and solar are selected separately in each
+        balancing area. If N sites are needed to meet the target at 2500&nbsp;MW per cell, the
+        candidate pool is the top 2N cells by annual capacity factor. The strongest candidate is
+        taken first. Each later site is the remaining candidate whose hourly profile has the
+        highest complementarity index against the sum of hourly capacity factors of the sites
+        already chosen, so a new site is preferred when it generates in hours the earlier sites do not.
+      </dd>
+      <dt>Wind-TVCI</dt>
+      <dd>
+        Solar is placed first with Greedy, ranked by annual capacity. Wind is then chosen with
+        TVCI. The complementarity baseline starts as the hourly capacity factors of the solar
+        already placed in that balancing area, so every wind site, including the first, is chosen
+        to complement that solar as well as any wind already picked. The wind candidate pool uses
+        the same multiple of 2. An area with no solar falls back to ordinary TVCI for wind.
+      </dd>
+    </dl>
+    <dl class="meta">
+      <dt>Batch</dt><dd>20261116-vary-selection-strategy</dd>
+      <dt>Runs</dt><dd>4 (Greedy, Cluster, TVCI, Wind-TVCI)</dd>
+      <dt>Dispatch years</dt><dd>2022–2024</dd>
+      <dt>Capacity factor year</dt><dd>2025</dd>
+      <dt>VRE</dt><dd>solar capacity ratio: 0.5, wind capacity ratio: 2, 2500 MW per cell</dd>
+      <dt>BESS</dt><dd>capacity ratio: 0.5, duration: 4h, round trip efficiency: 88%</dd>
+      <dt>Wind capacity factor source</dt><dd><a href="https://www.renewables.ninja/">renewables.ninja</a></dd>
+    </dl>
+
+    <div class="chart"><div id="chart-net-demand" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-sat-demand-hours" class="chart-wrap"></div></div>
+    <div class="chart"><div id="chart-curtailment" class="chart-wrap"></div></div>
+
+    <p>
+      On the national totals, TVCI has the lowest net demand (8.8%) and the highest share
+      of hours with demand satisfied (85.7%). Wind-TVCI is almost the same (8.82% net demand,
+      85.61% satisfied hours). Greedy is close on satisfied hours (85.63%) but leaves more
+      net demand (9.37%) and the most curtailment (23.12%). Cluster is the outlier: the
+      highest net demand (9.89%), the fewest satisfied hours (83.87%), and the lowest
+      curtailment (16.63%).
+    </p>
+  </main>
+
+  <script>
+    // Province names shortened to Canada Post codes; the .a/.b suffix is the balancing area.
+    // Column order matches net_demand.csv, sat_demand_hours.csv, and curtailment.csv.
+    // The total column is omitted here and quoted in the conclusion.
+    const areas = [
+      "AB.a", "BC.a", "MB.a", "NB.a", "NL.a", "NL.b", "NS.a",
+      "ON.a", "ON.b", "PE.a", "QC.a", "QC.b", "SK.a",
+    ];
+
+    // One hue and one saturation per strategy, reused on every chart.
+    const strategies = [
+      {
+        name: "Greedy",
+        color: "hsl(207, 78%, 40%)",
+        netDemand: [15.46, 8.21, 8.24, 9.04, 4.46, 6.32, 6.11, 11.23, 6.69, 9.52, 6.0, 9.99, 10.46],
+        satDemandHours: [73.16, 84.84, 86.54, 84.57, 92.82, 90.16, 89.59, 81.26, 89.42, 85.11, 90.27, 84.74, 80.67],
+        curtailment: [17.86, 22.7, 25.58, 20.33, 25.41, 27.52, 25.44, 22.49, 26.93, 27.84, 25.73, 26.48, 16.43],
+      },
+      {
+        name: "Cluster",
+        color: "hsl(28, 92%, 46%)",
+        netDemand: [17.26, 10.49, 7.71, 9.04, 4.46, 6.32, 6.06, 11.38, 6.69, 9.52, 6.37, 6.53, 9.21],
+        satDemandHours: [61.96, 75.27, 86.66, 84.57, 92.82, 90.16, 89.55, 78.69, 89.42, 85.11, 87.71, 87.56, 80.81],
+        curtailment: [8.69, 9.51, 24.56, 20.33, 25.41, 27.52, 25.38, 17.98, 26.93, 27.84, 17.27, 23.76, 15.38],
+      },
+      {
+        name: "TVCI",
+        color: "hsl(158, 42%, 34%)",
+        netDemand: [12.8, 6.9, 8.3, 9.71, 4.46, 6.32, 6.06, 11.67, 6.69, 9.52, 6.11, 6.53, 8.8],
+        satDemandHours: [74.79, 85.78, 86.15, 83.45, 92.82, 90.16, 89.55, 78.84, 89.42, 85.11, 89.14, 87.56, 81.29],
+        curtailment: [14.21, 19.46, 25.52, 18.78, 25.41, 27.52, 25.38, 19.98, 26.93, 27.84, 24.08, 23.76, 14.86],
+      },
+      {
+        name: "Wind-TVCI",
+        color: "hsl(282, 58%, 46%)",
+        netDemand: [13.18, 6.82, 8.03, 9.71, 6.52, 5.17, 5.72, 11.67, 6.75, 9.08, 5.93, 6.57, 8.8],
+        satDemandHours: [74.26, 85.72, 86.67, 83.45, 90.05, 90.49, 89.99, 78.83, 89.17, 85.75, 89.59, 87.67, 81.29],
+        curtailment: [14.09, 19.09, 24.99, 18.78, 27.0, 26.06, 24.85, 20.03, 26.82, 27.31, 24.02, 23.62, 14.86],
+      },
+    ];
+
+    const baseLayout = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "#fbfaf7",
+      font: { family: "ui-sans-serif, system-ui, sans-serif", color: "#1a1f24", size: 13 },
+      margin: { t: 48, r: 16, b: 108, l: 64 },
+      barmode: "group",
+      bargap: 0.28,
+      bargroupgap: 0.06,
+      xaxis: {
+        title: { text: "Balancing area" },
+        type: "category",
+        categoryorder: "array",
+        categoryarray: areas,
+        tickangle: -40,
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      yaxis: {
+        rangemode: "tozero",
+        gridcolor: "#e8e4dc",
+        zeroline: false,
+      },
+      legend: {
+        orientation: "h",
+        yanchor: "top",
+        y: -0.32,
+        x: 0.5,
+        xanchor: "center",
+        bgcolor: "rgba(255,255,255,0.85)",
+        bordercolor: "#d5d1c8",
+        borderwidth: 1,
+      },
+      hovermode: "x unified",
+    };
+
+    const config = { responsive: true, displayModeBar: false };
+
+    function draw(divId, title, yTitle, metric) {
+      const traces = strategies.map(strategy => ({
+        type: "bar",
+        x: areas,
+        y: strategy[metric],
+        name: strategy.name,
+        marker: { color: strategy.color },
+      }));
+      Plotly.newPlot(
+        divId,
+        traces,
+        {
+          ...baseLayout,
+          title: { text: title, font: { size: 16 } },
+          yaxis: { ...baseLayout.yaxis, title: { text: yTitle } },
+        },
+        config
+      );
+    }
+
+    draw("chart-net-demand", "Net Demand by Balancing Area", "net_demand_pct (%)", "netDemand");
+    draw(
+      "chart-sat-demand-hours",
+      "Satisfied Demand Hours by Balancing Area",
+      "satisfied_demand_hours_pct (%)",
+      "satDemandHours"
+    );
+    draw("chart-curtailment", "Curtailment by Balancing Area", "curtailment_pct (%)", "curtailment");
+  </script>
+</body>
+</html>

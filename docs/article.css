@@ -67,6 +67,17 @@ a:hover { text-decoration-thickness: 2px; }
   display: inline;
   margin: 0 1.25rem 0 0.35rem;
 }
+.strategies {
+  margin: 0 0 1.75rem;
+}
+.strategies dt {
+  font-weight: 600;
+  margin: 0.9rem 0 0.15rem;
+}
+.strategies dt:first-child { margin-top: 0; }
+.strategies dd {
+  margin: 0;
+}
 .chart {
   background: var(--panel);
   border: 1px solid var(--rule);
