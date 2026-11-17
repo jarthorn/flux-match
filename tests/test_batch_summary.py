@@ -12,6 +12,7 @@ from flux_match import paths
 from flux_match.config import dump_toml
 from flux_match.errors import DataError, RunStateError
 from flux_match.viz.batch_summary import (
+    AREA_STAT_FILES,
     INVARIANTS_FILENAME,
     SUMMARY_FILENAME,
     batch_dir_for,
@@ -32,12 +33,18 @@ BASE_CONFIG = {
 
 
 def dispatch_stats(
-    peaks: dict[str, int] | None = None, curtailment_total: float | None = 12.5
+    peaks: dict[str, int] | None = None,
+    curtailment_total: float | None = 12.5,
+    *,
+    net_demand: dict[str, float] | None = None,
+    curtailment: dict[str, float | None] | None = None,
+    satisfied: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     return {
-        "net_demand_pct": {"A.a": 40.0, "total": 41.5},
-        "curtailment_pct": {"A.a": curtailment_total, "total": curtailment_total},
-        "satisfied_demand_hours_pct": {"A.a": 3.0, "total": 2.5},
+        "net_demand_pct": net_demand or {"B.a": 50.0, "A.a": 40.0, "total": 41.5},
+        "curtailment_pct": curtailment
+        or {"B.a": curtailment_total, "A.a": curtailment_total, "total": curtailment_total},
+        "satisfied_demand_hours_pct": satisfied or {"B.a": 1.0, "A.a": 3.0, "total": 2.5},
         "peak_net_demand_mw": peaks or {"A.a": 100, "B.a": 300, "C.a": 200},
     }
 
@@ -184,6 +191,66 @@ class BatchSummaryTest(unittest.TestCase):
         self.assertIn("0004: batch_index 5 does not match", stderr.getvalue())
         self.assertFalse((self.batch_dir / SUMMARY_FILENAME).exists())
         self.assertFalse((self.batch_dir / INVARIANTS_FILENAME).exists())
+        for _, filename, _ in AREA_STAT_FILES:
+            self.assertFalse((self.batch_dir / filename).exists())
+
+    def test_area_stat_csvs_have_sorted_bas_and_total(self):
+        self.add_run(2, self.with_overrides(selection__wind_capacity_ratio=2))
+        self.add_run(1, self.with_overrides())
+        write_batch_summary(self.batch_dir)
+        with (self.batch_dir / "net_demand.csv").open(newline="") as f:
+            reader = csv.DictReader(f)
+            self.assertEqual(
+                list(reader.fieldnames or []),
+                ["batch_index", "started", "A.a", "B.a", "total"],
+            )
+            rows = list(reader)
+        self.assertEqual([r["batch_index"] for r in rows], ["1", "2"])
+        self.assertEqual(rows[0]["A.a"], "40.0")
+        self.assertEqual(rows[0]["B.a"], "50.0")
+        self.assertEqual(rows[0]["total"], "41.5")
+        self.assertEqual(rows[0]["started"], "2026-11-05T08:01:00")
+        with (self.batch_dir / "sat_demand_hours.csv").open(newline="") as f:
+            sat = list(csv.DictReader(f))
+        self.assertEqual(sat[0]["A.a"], "3.0")
+        self.assertEqual(sat[0]["total"], "2.5")
+
+    def test_null_curtailment_is_zero_in_area_csv(self):
+        self.add_run(
+            1,
+            self.with_overrides(),
+            dispatch_stats=dispatch_stats(
+                curtailment={"A.a": None, "B.a": None, "total": None},
+            ),
+        )
+        write_batch_summary(self.batch_dir)
+        with (self.batch_dir / "curtailment.csv").open(newline="") as f:
+            row = next(csv.DictReader(f))
+        self.assertEqual(row["A.a"], "0.0")
+        self.assertEqual(row["B.a"], "0.0")
+        self.assertEqual(row["total"], "0.0")
+
+    def test_missing_balancing_area_fails_and_writes_nothing(self):
+        self.add_run(1, self.with_overrides())
+        self.add_run(
+            2,
+            self.with_overrides(selection__wind_capacity_ratio=2),
+            dispatch_stats=dispatch_stats(
+                net_demand={"A.a": 40.0, "total": 40.0},
+                curtailment={"A.a": 12.5, "total": 12.5},
+                satisfied={"A.a": 3.0, "total": 3.0},
+            ),
+        )
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), self.assertRaisesRegex(DataError, "missing balancing areas"):
+            write_batch_summary(self.batch_dir)
+        err = stderr.getvalue()
+        self.assertIn("0002: dispatch_stats.net_demand_pct missing balancing areas", err)
+        self.assertIn("['B.a']", err)
+        self.assertFalse((self.batch_dir / SUMMARY_FILENAME).exists())
+        self.assertFalse((self.batch_dir / INVARIANTS_FILENAME).exists())
+        for _, filename, _ in AREA_STAT_FILES:
+            self.assertFalse((self.batch_dir / filename).exists())
 
     def test_empty_batch_fails(self):
         with self.assertRaisesRegex(DataError, "No run folders"):

@@ -2,14 +2,18 @@
 
     uv run python -m flux_match.viz.batch_summary --batch NAME
 
-Reads every subfolder of output/NAME (one per batch run) and writes two files to that folder:
+Reads every subfolder of output/NAME (one per batch run) and writes these files to that folder:
     summary.csv       one row per run, sorted by batch_index: batch_index, started, every
                       config.toml value that differs between runs (or is missing from some),
                       then summary dispatch statistics from run.json
     invariants.toml   the config.toml values that are identical in every run
-Each config.toml value is in exactly one of the two files. Config columns are dotted keys
-(`selection.wind_capacity_ratio`); arrays and booleans are written as TOML literals. Any
-incomplete or malformed run fails the whole summary, after reporting every bad run.
+    net_demand.csv, curtailment.csv, sat_demand_hours.csv
+                      one row per run: batch_index, started, each balancing area (sorted),
+                      then total; values from the matching dispatch_stats percentage
+Each config.toml value is in exactly one of summary.csv and invariants.toml. Config columns
+are dotted keys (`selection.wind_capacity_ratio`); arrays and booleans are written as TOML
+literals. Any incomplete or malformed run fails the whole summary, after reporting every
+bad run.
 """
 
 import argparse
@@ -30,6 +34,13 @@ from flux_match.steps.dispatch.dispatch import STATS_TOTAL_KEY
 SUMMARY_FILENAME = "summary.csv"
 INVARIANTS_FILENAME = "invariants.toml"
 
+# (dispatch_stats key, output filename, treat null as 0.0)
+AREA_STAT_FILES: tuple[tuple[str, str, bool], ...] = (
+    ("net_demand_pct", "net_demand.csv", False),
+    ("curtailment_pct", "curtailment.csv", True),
+    ("satisfied_demand_hours_pct", "sat_demand_hours.csv", False),
+)
+
 RUN_COLUMNS = ("batch_index", "started")
 STAT_COLUMNS = (
     "net_demand_pct",
@@ -48,6 +59,8 @@ class BatchRun:
     """config.toml flattened to dotted keys."""
     stats: dict[str, object]
     """STAT_COLUMNS values."""
+    area_stats: dict[str, dict[str, float]]
+    """Per-metric balancing-area values (including total); null curtailment is 0.0."""
 
 
 def flatten_config(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -96,7 +109,11 @@ def read_run(run_dir: Path) -> BatchRun:
         stats = manifest.get("dispatch_stats")
         if not isinstance(stats, dict):
             raise DataError("run.json has no dispatch_stats")
-        return BatchRun(batch_index, started, config, summary_stats(stats))
+        area_stats = {
+            name: _stat_by_area(stats, name, allow_null=allow_null)
+            for name, _, allow_null in AREA_STAT_FILES
+        }
+        return BatchRun(batch_index, started, config, summary_stats(stats), area_stats)
     except FluxMatchError as e:
         raise DataError(f"{run_dir}: {e}") from None
 
@@ -123,26 +140,35 @@ def summary_stats(stats: dict[str, Any]) -> dict[str, object]:
         _check_number(f"dispatch_stats.peak_net_demand_mw.{ba}", mw)
     # max() keeps the first of tied areas, in run.json order.
     peak_ba = max(peaks, key=peaks.__getitem__)
-    curtailment = _stat_total(stats, "curtailment_pct", allow_null=True)
     return {
-        "net_demand_pct": _stat_total(stats, "net_demand_pct"),
-        # null when there is no variable generation, so nothing to curtail.
-        "curtailment_pct": 0.0 if curtailment is None else curtailment,
-        "satisfied_demand_hours_pct": _stat_total(stats, "satisfied_demand_hours_pct"),
+        "net_demand_pct": _stat_by_area(stats, "net_demand_pct")[STATS_TOTAL_KEY],
+        "curtailment_pct": _stat_by_area(stats, "curtailment_pct", allow_null=True)[
+            STATS_TOTAL_KEY
+        ],
+        "satisfied_demand_hours_pct": _stat_by_area(stats, "satisfied_demand_hours_pct")[
+            STATS_TOTAL_KEY
+        ],
         "peak_net_demand_mw": peaks[peak_ba],
         "peak_net_demand_ba": peak_ba,
     }
 
 
-def _stat_total(stats: dict[str, Any], name: str, allow_null: bool = False) -> float | None:
+def _stat_by_area(stats: dict[str, Any], name: str, allow_null: bool = False) -> dict[str, float]:
+    """Balancing-area values for one dispatch_stats metric, including total.
+
+    Null values become 0.0 when allow_null is true (curtailment with no variable generation).
+    """
     by_area = stats.get(name)
-    label = f"dispatch_stats.{name}.{STATS_TOTAL_KEY}"
     if not isinstance(by_area, dict) or STATS_TOTAL_KEY not in by_area:
-        raise DataError(f"{label} is missing")
-    value = by_area[STATS_TOTAL_KEY]
-    if value is None and allow_null:
-        return None
-    return _check_number(label, value)
+        raise DataError(f"dispatch_stats.{name}.{STATS_TOTAL_KEY} is missing")
+    result: dict[str, float] = {}
+    for ba, value in by_area.items():
+        label = f"dispatch_stats.{name}.{ba}"
+        if value is None and allow_null:
+            result[ba] = 0.0
+        else:
+            result[ba] = _check_number(label, value)
+    return result
 
 
 def _check_number(label: str, value: object) -> float:
@@ -226,14 +252,71 @@ def _csv_value(value: Any) -> object:
     return dump_value(value)
 
 
+def balancing_areas(runs: Sequence[BatchRun], metric: str) -> list[str]:
+    """Sorted BA names for a metric; every run must have every area (and total already checked)."""
+    expected = sorted(
+        {ba for run in runs for ba in run.area_stats[metric] if ba != STATS_TOTAL_KEY}
+    )
+    if not expected:
+        raise DataError(f"dispatch_stats.{metric} has no balancing areas")
+    errors = 0
+    for run in runs:
+        present = {ba for ba in run.area_stats[metric] if ba != STATS_TOTAL_KEY}
+        missing = [ba for ba in expected if ba not in present]
+        if missing:
+            report_data_error(
+                f"{paths.batch_run_dir_name(run.batch_index)}: "
+                f"dispatch_stats.{metric} missing balancing areas: {missing}"
+            )
+            errors += 1
+    if errors:
+        raise DataError(
+            f"{errors} of {len(runs)} runs are missing balancing areas in dispatch_stats.{metric}"
+        )
+    return expected
+
+
+def area_stat_columns(areas: Sequence[str]) -> list[str]:
+    return [*RUN_COLUMNS, *areas, STATS_TOTAL_KEY]
+
+
+def area_stat_rows(
+    runs: Sequence[BatchRun], metric: str, areas: Sequence[str]
+) -> list[dict[str, object]]:
+    return [
+        {
+            "batch_index": run.batch_index,
+            "started": run.started,
+            **{ba: run.area_stats[metric][ba] for ba in areas},
+            STATS_TOTAL_KEY: run.area_stats[metric][STATS_TOTAL_KEY],
+        }
+        for run in runs
+    ]
+
+
+def write_area_stat_csvs(
+    batch_dir: Path, runs: Sequence[BatchRun], areas_by_metric: dict[str, list[str]]
+) -> None:
+    """Write the three per-balancing-area CSVs using already-validated BA lists."""
+    for metric, filename, _ in AREA_STAT_FILES:
+        areas = areas_by_metric[metric]
+        write_csv_atomic(
+            batch_dir / filename, area_stat_columns(areas), area_stat_rows(runs, metric, areas)
+        )
+
+
 def write_batch_summary(batch_dir: Path) -> tuple[int, dict[str, Any], list[str]]:
-    """Write summary.csv and invariants.toml to batch_dir. Returns (runs, invariants, varying)."""
+    """Write summary.csv, invariants.toml, and the three area CSVs. Returns
+    (runs, invariants, varying)."""
     runs = read_batch(batch_dir)
     invariants, varying = split_config(runs)
+    # Validate BA sets before writing any outputs.
+    areas_by_metric = {metric: balancing_areas(runs, metric) for metric, _, _ in AREA_STAT_FILES}
     write_csv_atomic(
         batch_dir / SUMMARY_FILENAME, summary_columns(varying), summary_rows(runs, varying)
     )
     (batch_dir / INVARIANTS_FILENAME).write_text(dump_toml(unflatten_config(invariants)))
+    write_area_stat_csvs(batch_dir, runs, areas_by_metric)
     return len(runs), invariants, varying
 
 
@@ -262,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
         "varying config values)"
     )
     print(f"Wrote {batch_dir / INVARIANTS_FILENAME} ({len(invariants)} invariant config values)")
+    names = ", ".join(filename for _, filename, _ in AREA_STAT_FILES)
+    print(f"Wrote {names} (per-balancing-area stats)")
     return 0
 
 
