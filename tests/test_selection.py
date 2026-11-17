@@ -24,11 +24,11 @@ class SiteTest(unittest.TestCase):
     def test_rejects_non_positive_or_non_finite_capacity(self) -> None:
         for capacity in (0.0, -1.0, float("nan"), float("inf")):
             with self.subTest(capacity=capacity), self.assertRaises(ValueError):
-                Site(1, SOLAR, capacity)
+                Site(1, SOLAR, capacity, "East.a")
 
     def test_rejects_plain_string_generation_type(self) -> None:
         with self.assertRaises(ValueError):
-            Site(1, "solar", 1.0)  # type: ignore[arg-type]
+            Site(1, "solar", 1.0, "East.a")  # type: ignore[arg-type]
 
 
 class SitesFileTest(unittest.TestCase):
@@ -38,39 +38,56 @@ class SitesFileTest(unittest.TestCase):
         self.path = Path(tmp.name) / "selected_sites.csv"
 
     def test_round_trip_is_sorted_and_exact(self) -> None:
-        sites = [Site(10, WIND_ONS, 0.1 + 0.2), Site(2, WIND_OFS, 500.0), Site(2, SOLAR, 1.5)]
+        sites = [
+            Site(10, WIND_ONS, 0.1 + 0.2, "West.a"),
+            Site(2, WIND_OFS, 500.0, "East.a"),
+            Site(2, SOLAR, 1.5, "East.a"),
+        ]
         write_sites(self.path, sites)
         self.assertEqual(
             self.path.read_text().splitlines(),
             [
-                "grid_cell,generation_type,capacity_mw",
-                "2,solar,1.5",
-                "2,wind_ofs,500.0",
-                "10,wind_ons,0.30000000000000004",
+                "grid_cell,generation_type,capacity_mw,balancing_area",
+                "2,solar,1.5,East.a",
+                "2,wind_ofs,500.0,East.a",
+                "10,wind_ons,0.30000000000000004,West.a",
             ],
         )
         self.assertEqual(read_sites(self.path), sorted(sites))
 
     def test_empty_selection_writes_header_only(self) -> None:
         write_sites(self.path, [])
-        self.assertEqual(self.path.read_text().strip(), "grid_cell,generation_type,capacity_mw")
+        self.assertEqual(
+            self.path.read_text().strip(),
+            "grid_cell,generation_type,capacity_mw,balancing_area",
+        )
         self.assertEqual(read_sites(self.path), [])
 
     def test_write_rejects_duplicate_cell_and_type(self) -> None:
         with self.assertRaisesRegex(DataError, "grid cell 3 solar"):
-            write_sites(self.path, [Site(3, SOLAR, 1.0), Site(3, SOLAR, 2.0)])
+            write_sites(self.path, [Site(3, SOLAR, 1.0, "East.a"), Site(3, SOLAR, 2.0, "East.a")])
         self.assertFalse(self.path.exists())
 
     def test_read_rejects_duplicate_cell_and_type(self) -> None:
-        self.path.write_text("grid_cell,generation_type,capacity_mw\n3,solar,1\n3,solar,2\n")
+        self.path.write_text(
+            "grid_cell,generation_type,capacity_mw,balancing_area\n"
+            "3,solar,1,East.a\n3,solar,2,East.a\n"
+        )
         with self.assertRaisesRegex(DataError, "grid cell 3 solar"):
             read_sites(self.path)
 
     def test_read_reports_line_of_bad_row(self) -> None:
-        for bad_row in ("x,solar,1", "1,wind,1", "1,solar,0", "1,solar,"):
+        for bad_row in (
+            "x,solar,1,East.a",
+            "1,wind,1,East.a",
+            "1,solar,0,East.a",
+            "1,solar,,East.a",
+            "1,solar,1,",
+        ):
             with self.subTest(row=bad_row):
                 self.path.write_text(
-                    f"grid_cell,generation_type,capacity_mw\n1,solar,1\n{bad_row}\n"
+                    "grid_cell,generation_type,capacity_mw,balancing_area\n"
+                    f"1,solar,1,East.a\n{bad_row}\n"
                 )
                 with self.assertRaisesRegex(DataError, r"selected_sites\.csv:3:"):
                     read_sites(self.path)
@@ -79,6 +96,13 @@ class SitesFileTest(unittest.TestCase):
         self.path.write_text("grid_cell,capacity_mw\n1,1\n")
         with self.assertRaisesRegex(DataError, "generation_type"):
             read_sites(self.path)
+
+    def test_read_ignores_unexpected_columns(self) -> None:
+        self.path.write_text(
+            "note,grid_cell,generation_type,capacity_mw,balancing_area,extra\n"
+            "keep,2,solar,1.5,East.a,me\n"
+        )
+        self.assertEqual(read_sites(self.path), [Site(2, SOLAR, 1.5, "East.a")])
 
 
 class RankingsPathTest(unittest.TestCase):

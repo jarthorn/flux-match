@@ -145,19 +145,24 @@ class SelectSitesTest(unittest.TestCase):
         # Solar greedy by annual rank: 5 then 4. Their CF sum is 2W, so wind's first pick
         # from pool 1-4 is the mirror at 3 (classic TVCI would force best-ranked 1 first).
         sites = self.select(2.0)
-        self.assertEqual(self.east(sites, SOLAR), [Site(4, SOLAR, 1.0), Site(5, SOLAR, 1.0)])
         self.assertEqual(
-            self.east(sites, WIND_ONS), [Site(1, WIND_ONS, 1.0), Site(3, WIND_ONS, 1.0)]
+            self.east(sites, SOLAR),
+            [Site(4, SOLAR, 1.0, "East.a"), Site(5, SOLAR, 1.0, "East.a")],
         )
-        self.assertIn(Site(6, WIND_ONS, 1.0), sites)
-        self.assertIn(Site(6, SOLAR, 1.0), sites)
+        self.assertEqual(
+            self.east(sites, WIND_ONS),
+            [Site(1, WIND_ONS, 1.0, "East.a"), Site(3, WIND_ONS, 1.0, "East.a")],
+        )
+        self.assertIn(Site(6, WIND_ONS, 1.0, "West.a"), sites)
+        self.assertIn(Site(6, SOLAR, 1.0, "West.a"), sites)
 
     def test_no_solar_falls_back_to_classic_tvci_wind(self) -> None:
         # Without solar, wind forces the best-ranked cell first, then its mirror.
         sites = self.select(2.0, solar_capacity_ratio=0.0)
         self.assertEqual([s for s in sites if s.generation_type is SOLAR], [])
         self.assertEqual(
-            self.east(sites, WIND_ONS), [Site(1, WIND_ONS, 1.0), Site(3, WIND_ONS, 1.0)]
+            self.east(sites, WIND_ONS),
+            [Site(1, WIND_ONS, 1.0, "East.a"), Site(3, WIND_ONS, 1.0, "East.a")],
         )
 
     def test_pick_order_prefers_solar_mirror_first(self) -> None:
@@ -167,7 +172,7 @@ class SelectSitesTest(unittest.TestCase):
         sites = self.select(2.0, solar_capacity_ratio=1.0)
         self.assertEqual(
             self.east(sites, WIND_ONS),
-            [Site(1, WIND_ONS, 0.5), Site(3, WIND_ONS, 1.0)],
+            [Site(1, WIND_ONS, 0.5, "East.a"), Site(3, WIND_ONS, 1.0, "East.a")],
         )
 
 

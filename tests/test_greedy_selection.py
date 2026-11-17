@@ -26,7 +26,11 @@ class AllocateTest(unittest.TestCase):
         sites = allocate([20, 10, 30], 2.5, 1.0, WIND_ONS, "East.a")
         self.assertEqual(
             sites,
-            [Site(20, WIND_ONS, 1.0), Site(10, WIND_ONS, 1.0), Site(30, WIND_ONS, 0.5)],
+            [
+                Site(20, WIND_ONS, 1.0, "East.a"),
+                Site(10, WIND_ONS, 1.0, "East.a"),
+                Site(30, WIND_ONS, 0.5, "East.a"),
+            ],
         )
 
     def test_zero_target_selects_nothing(self) -> None:
@@ -38,7 +42,7 @@ class AllocateTest(unittest.TestCase):
             sites = allocate([1, 2], 5.0, 2.0, WIND_ONS, "East.a")
         self.assertEqual(
             sites,
-            [Site(1, WIND_ONS, 2.5), Site(2, WIND_ONS, 2.5)],
+            [Site(1, WIND_ONS, 2.5, "East.a"), Site(2, WIND_ONS, 2.5, "East.a")],
         )
         self.assertIn(
             "The value of max_wind_capacity_mw_per_cell is too low to meet "
@@ -51,7 +55,7 @@ class AllocateTest(unittest.TestCase):
         stdout = StringIO()
         with redirect_stdout(stdout):
             sites = allocate([7], 10.0, 3.0, SOLAR, "West.a")
-        self.assertEqual(sites, [Site(7, SOLAR, 10.0)])
+        self.assertEqual(sites, [Site(7, SOLAR, 10.0, "West.a")])
         self.assertIn("max_solar_capacity_mw_per_cell", stdout.getvalue())
         self.assertIn("Raising the maximum to 10", stdout.getvalue())
 
@@ -169,12 +173,12 @@ class SelectSitesTest(unittest.TestCase):
         self.assertEqual(
             sorted(self.select()),
             [
-                Site(10, SOLAR, 2.0),
-                Site(10, WIND_ONS, 1.0),
-                Site(20, SOLAR, 1.0),
-                Site(20, WIND_ONS, 2.0),
-                Site(30, SOLAR, 1.0),
-                Site(30, WIND_ONS, 1.0),
+                Site(10, SOLAR, 2.0, "East.a"),
+                Site(10, WIND_ONS, 1.0, "East.a"),
+                Site(20, SOLAR, 1.0, "East.a"),
+                Site(20, WIND_ONS, 2.0, "East.a"),
+                Site(30, SOLAR, 1.0, "West.a"),
+                Site(30, WIND_ONS, 1.0, "West.a"),
             ],
         )
 
@@ -183,12 +187,12 @@ class SelectSitesTest(unittest.TestCase):
         self.assertEqual(
             sorted(self.select(ranking_metric="median_daily_capacity")),
             [
-                Site(10, SOLAR, 1.0),
-                Site(10, WIND_ONS, 2.0),
-                Site(20, SOLAR, 2.0),
-                Site(20, WIND_ONS, 1.0),
-                Site(30, SOLAR, 1.0),
-                Site(30, WIND_ONS, 1.0),
+                Site(10, SOLAR, 1.0, "East.a"),
+                Site(10, WIND_ONS, 2.0, "East.a"),
+                Site(20, SOLAR, 2.0, "East.a"),
+                Site(20, WIND_ONS, 1.0, "East.a"),
+                Site(30, SOLAR, 1.0, "West.a"),
+                Site(30, WIND_ONS, 1.0, "West.a"),
             ],
         )
 
@@ -205,12 +209,12 @@ class SelectSitesTest(unittest.TestCase):
         self.assertEqual(
             sorted(sites),
             [
-                Site(10, SOLAR, 2.0),
-                Site(10, WIND_ONS, 1.5),
-                Site(20, SOLAR, 1.0),
-                Site(20, WIND_ONS, 1.5),
-                Site(30, SOLAR, 1.0),
-                Site(30, WIND_ONS, 1.0),
+                Site(10, SOLAR, 2.0, "East.a"),
+                Site(10, WIND_ONS, 1.5, "East.a"),
+                Site(20, SOLAR, 1.0, "East.a"),
+                Site(20, WIND_ONS, 1.5, "East.a"),
+                Site(30, SOLAR, 1.0, "West.a"),
+                Site(30, WIND_ONS, 1.0, "West.a"),
             ],
         )
         self.assertIn("max_wind_capacity_mw_per_cell", stdout.getvalue())

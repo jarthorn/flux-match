@@ -50,9 +50,9 @@ class TempDirTest(unittest.TestCase):
 class LocateSitesTest(unittest.TestCase):
     def test_splits_wind_and_solar_and_tags_balancing_area(self) -> None:
         sites = [
-            Site(1, WIND_ONS, 100.0),
-            Site(2, SOLAR, 50.0),
-            Site(1, WIND_OFS, 25.0),
+            Site(1, WIND_ONS, 100.0, "East.a"),
+            Site(2, SOLAR, 50.0, "West.a"),
+            Site(1, WIND_OFS, 25.0, "East.a"),
         ]
         wind, solar = locate_sites(
             sites, {"1": "East.a", "2": "West.a"}, Path("selected_sites.csv")
@@ -64,7 +64,11 @@ class LocateSitesTest(unittest.TestCase):
         self.assertEqual(solar, [LocatedSite(2, "West.a", 50.0)])
 
     def test_missing_grid_cells_fail(self) -> None:
-        sites = [Site(1, SOLAR, 1.0), Site(9, WIND_ONS, 1.0), Site(8, SOLAR, 1.0)]
+        sites = [
+            Site(1, SOLAR, 1.0, "East.a"),
+            Site(9, WIND_ONS, 1.0, "East.a"),
+            Site(8, SOLAR, 1.0, "East.a"),
+        ]
         with self.assertRaisesRegex(DataError, r"selected_sites\.csv:.*\[8, 9\]"):
             locate_sites(sites, {"1": "East.a"}, Path("selected_sites.csv"))
 
@@ -122,7 +126,11 @@ class WriteVreHourlyTest(TempDirTest):
     def test_combines_wind_and_solar_and_includes_areas_with_no_sites(self) -> None:
         rows = self._write(
             *self._inputs(
-                [Site(1, WIND_ONS, 100.0), Site(1, SOLAR, 40.0), Site(3, WIND_OFS, 20.0)],
+                [
+                    Site(1, WIND_ONS, 100.0, "East.a"),
+                    Site(1, SOLAR, 40.0, "East.a"),
+                    Site(3, WIND_OFS, 20.0, "East.a"),
+                ],
                 {"1": [0.5, 0.0, 0.25], "3": [0.5, 1.0, 0.0]},
                 {"1": [0.25, 0.5, 0.0], "2": [1.0, 1.0, 1.0]},
             )
@@ -157,7 +165,7 @@ class WriteVreHourlyTest(TempDirTest):
     def test_output_rounded_to_whole_mw_and_total_is_sum_of_rounded_values(self) -> None:
         rows = self._write(
             *self._inputs(
-                [Site(1, WIND_ONS, 566.9952054794521), Site(1, SOLAR, 10.0)],
+                [Site(1, WIND_ONS, 566.9952054794521, "East.a"), Site(1, SOLAR, 10.0, "East.a")],
                 {"1": [1.0, 0.0, 0.0], "3": [0.0, 0.0, 0.0]},
                 {"1": [0.04, 0.0, 0.0]},
             )
@@ -168,7 +176,7 @@ class WriteVreHourlyTest(TempDirTest):
 
     def test_selected_cell_missing_from_grid_info_fails_without_output(self) -> None:
         args = self._inputs(
-            [Site(9, SOLAR, 1.0)],
+            [Site(9, SOLAR, 1.0, "East.a")],
             {"1": [0.1, 0.1, 0.1]},
             {"1": [0.1, 0.1, 0.1]},
         )
@@ -179,7 +187,7 @@ class WriteVreHourlyTest(TempDirTest):
 
     def test_bad_capacity_factor_fails_without_output(self) -> None:
         args = self._inputs(
-            [Site(1, WIND_ONS, 1.0)],
+            [Site(1, WIND_ONS, 1.0, "East.a")],
             {"1": [0.1, 1.5, 0.1]},
             {"1": [0.1, 0.1, 0.1]},
         )
@@ -214,7 +222,10 @@ class PreprocessRunTest(TempDirTest):
             lines.append(f'wind_source = "{wind_source}"')
         scenario = self.write("default.toml", "\n".join(lines) + "\n")
         ctx = create_run(scenario, self.dir / "output", datetime(2026, 10, 27, 19, 51))
-        write_sites(paths.selected_sites_path(ctx), [Site(1, WIND_ONS, 10.0), Site(1, SOLAR, 8.0)])
+        write_sites(
+            paths.selected_sites_path(ctx),
+            [Site(1, WIND_ONS, 10.0, "East.a"), Site(1, SOLAR, 8.0, "East.a")],
+        )
         return ctx
 
     def run_step(self, ctx) -> None:

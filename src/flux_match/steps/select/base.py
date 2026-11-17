@@ -5,13 +5,15 @@ Every strategy returns a list of Site records; the step writes them with write_s
 strategies produce the same file. The file is a sparse CSV with one row per grid cell and
 generation type that has capacity:
 
-    grid_cell,generation_type,capacity_mw
-    1,solar,250.0
-    1,wind_ons,1000.0
+    grid_cell,generation_type,capacity_mw,balancing_area
+    1,solar,250.0,Ontario.a
+    1,wind_ons,1000.0,Ontario.a
 
 grid_cell is a grid_cell id from data/coders/grid_cell_info.csv. generation_type is one of
-the GenerationType values. capacity_mw is positive and finite. A (grid_cell, generation_type)
-pair appears at most once. Rows are sorted by grid_cell, then generation_type.
+the GenerationType values. capacity_mw is positive and finite. balancing_area is the area
+the site was selected in, and is non-empty. A (grid_cell, generation_type) pair appears at
+most once. Rows are sorted by grid_cell, then generation_type. Readers require these columns
+and ignore any others, so an extra column does not invalidate the file.
 
 For each balancing area, nameplate wind and solar capacity are a fraction of that area's
 average load in the newest year of balancing_area_demand.csv:
@@ -53,6 +55,7 @@ class Site:
     grid_cell: int
     generation_type: GenerationType
     capacity_mw: float
+    balancing_area: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.generation_type, GenerationType):
@@ -61,6 +64,11 @@ class Site:
             raise ValueError(
                 f"capacity_mw must be positive and finite for grid cell {self.grid_cell} "
                 f"{self.generation_type}: {self.capacity_mw}"
+            )
+        if not isinstance(self.balancing_area, str) or not self.balancing_area:
+            raise ValueError(
+                f"balancing_area must be a non-empty string for grid cell {self.grid_cell} "
+                f"{self.generation_type}: {self.balancing_area!r}"
             )
 
 
@@ -91,6 +99,7 @@ def read_sites(path: Path) -> list[Site]:
                     grid_cell=int(row["grid_cell"]),
                     generation_type=GenerationType(row["generation_type"]),
                     capacity_mw=float(row["capacity_mw"]),
+                    balancing_area=row["balancing_area"],
                 )
             )
         except ValueError as e:
@@ -265,7 +274,7 @@ def allocate(
         if remaining <= 0:
             break
         capacity = min(max_mw, remaining)
-        sites.append(Site(cell, generation_type, capacity))
+        sites.append(Site(cell, generation_type, capacity, balancing_area))
         remaining -= capacity
     if remaining > 0:
         raise DataError(

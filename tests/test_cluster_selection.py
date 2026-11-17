@@ -132,14 +132,14 @@ class SelectSitesTest(unittest.TestCase):
         self.assertEqual(
             sorted(self.select()),
             [
-                Site(1, SOLAR, 1.0),
-                Site(1, WIND_ONS, 1.0),
-                Site(2, WIND_ONS, 0.5),
-                Site(3, SOLAR, 1.0),
-                Site(3, WIND_ONS, 1.0),
-                Site(4, SOLAR, 0.5),
-                Site(5, SOLAR, 1.0),
-                Site(5, WIND_ONS, 1.0),
+                Site(1, SOLAR, 1.0, "East.a"),
+                Site(1, WIND_ONS, 1.0, "East.a"),
+                Site(2, WIND_ONS, 0.5, "East.a"),
+                Site(3, SOLAR, 1.0, "East.a"),
+                Site(3, WIND_ONS, 1.0, "East.a"),
+                Site(4, SOLAR, 0.5, "East.a"),
+                Site(5, SOLAR, 1.0, "West.a"),
+                Site(5, WIND_ONS, 1.0, "West.a"),
             ],
         )
 
@@ -160,7 +160,7 @@ class SelectSitesTest(unittest.TestCase):
         with redirect_stdout(stdout):
             sites = self.select(wind_capacity_ratio=4.0)
         east_wind = sorted(s for s in sites if s.generation_type is WIND_ONS and s.grid_cell < 5)
-        self.assertEqual(east_wind, [Site(c, WIND_ONS, 2.5) for c in (1, 2, 3, 4)])
+        self.assertEqual(east_wind, [Site(c, WIND_ONS, 2.5, "East.a") for c in (1, 2, 3, 4)])
         self.assertIn("Raising the maximum to 2.5", stdout.getvalue())
 
     def test_writes_clusters_file(self) -> None:

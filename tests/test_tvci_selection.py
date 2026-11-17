@@ -249,24 +249,33 @@ class SelectSitesTest(unittest.TestCase):
         # Solar pool 5, 4, 3, 2: 5, then its mirror 2. Greedy would pick 1, 2 and 5, 4.
         sites = self.select(2.0)
         self.assertEqual(
-            self.east(sites, WIND_ONS), [Site(1, WIND_ONS, 1.0), Site(3, WIND_ONS, 1.0)]
+            self.east(sites, WIND_ONS),
+            [Site(1, WIND_ONS, 1.0, "East.a"), Site(3, WIND_ONS, 1.0, "East.a")],
         )
-        self.assertEqual(self.east(sites, SOLAR), [Site(2, SOLAR, 1.0), Site(5, SOLAR, 1.0)])
-        self.assertIn(Site(6, WIND_ONS, 1.0), sites)
-        self.assertIn(Site(6, SOLAR, 1.0), sites)
+        self.assertEqual(
+            self.east(sites, SOLAR),
+            [Site(2, SOLAR, 1.0, "East.a"), Site(5, SOLAR, 1.0, "East.a")],
+        )
+        self.assertIn(Site(6, WIND_ONS, 1.0, "West.a"), sites)
+        self.assertIn(Site(6, SOLAR, 1.0, "West.a"), sites)
 
     def test_multiple_of_one_uses_greedy_cells(self) -> None:
         sites = self.select(1.0)
         self.assertEqual(
-            self.east(sites, WIND_ONS), [Site(1, WIND_ONS, 1.0), Site(2, WIND_ONS, 1.0)]
+            self.east(sites, WIND_ONS),
+            [Site(1, WIND_ONS, 1.0, "East.a"), Site(2, WIND_ONS, 1.0, "East.a")],
         )
-        self.assertEqual(self.east(sites, SOLAR), [Site(4, SOLAR, 1.0), Site(5, SOLAR, 1.0)])
+        self.assertEqual(
+            self.east(sites, SOLAR),
+            [Site(4, SOLAR, 1.0, "East.a"), Site(5, SOLAR, 1.0, "East.a")],
+        )
 
     def test_pool_size_rounds_up(self) -> None:
         # ceil(1.5 * 2) = 3 wind candidates, which reaches the mirror in cell 3.
         sites = self.select(1.5)
         self.assertEqual(
-            self.east(sites, WIND_ONS), [Site(1, WIND_ONS, 1.0), Site(3, WIND_ONS, 1.0)]
+            self.east(sites, WIND_ONS),
+            [Site(1, WIND_ONS, 1.0, "East.a"), Site(3, WIND_ONS, 1.0, "East.a")],
         )
 
     def test_last_pick_takes_partial_capacity(self) -> None:
@@ -275,14 +284,20 @@ class SelectSitesTest(unittest.TestCase):
         sites = self.select(1.0, solar_capacity_ratio=0.0)
         self.assertEqual(
             self.east(sites, WIND_ONS),
-            [Site(1, WIND_ONS, 1.0), Site(2, WIND_ONS, 0.5), Site(3, WIND_ONS, 1.0)],
+            [
+                Site(1, WIND_ONS, 1.0, "East.a"),
+                Site(2, WIND_ONS, 0.5, "East.a"),
+                Site(3, WIND_ONS, 1.0, "East.a"),
+            ],
         )
 
     def test_uses_every_cell_and_raises_cap_when_target_exceeds_them(self) -> None:
         stdout = StringIO()
         with redirect_stdout(stdout):
             sites = self.select(2.0, wind_capacity_ratio=5.0, solar_capacity_ratio=0.0)
-        self.assertEqual(self.east(sites, WIND_ONS), [Site(c, WIND_ONS, 2.0) for c in range(1, 6)])
+        self.assertEqual(
+            self.east(sites, WIND_ONS), [Site(c, WIND_ONS, 2.0, "East.a") for c in range(1, 6)]
+        )
         self.assertIn("Raising the maximum to 2", stdout.getvalue())
 
     def test_skips_table_with_no_target(self) -> None:
