@@ -12,13 +12,24 @@
     <h1>Flux Match Experiment: Varying Site Selection Strategy</h1>
     <p class="lede">
       In this experiment, wind, solar, and battery capacity are held fixed, and only the
-      site selection strategy changes. The charts below show net demand, satisfied
-      demand hours, and curtailment in each balancing area. Results are calculated using
+      site selection strategy changes. Net demand, satisfied demand hours, and curtailment
+      are compared for each balancing area. Results are calculated using
       <a href="https://github.com/jarthorn/flux-match">Flux Match</a>, a very simple dispatch
       model for the Canadian electricity system. Demand and solar capacity factors are taken
       from the <a href="https://coders.cme-emh.ca/">CODERS</a> database; wind capacity factors
       are from <a href="https://www.renewables.ninja/">renewables.ninja</a>.
     </p>
+    <dl class="meta">
+      <dt>Batch</dt><dd>20261116-vary-selection-strategy</dd>
+      <dt>Runs</dt><dd>4 (Greedy, Cluster, TVCI, Wind-TVCI)</dd>
+      <dt>Dispatch years</dt><dd>2022–2024</dd>
+      <dt>Capacity factor year</dt><dd>2025</dd>
+      <dt>VRE</dt><dd>solar capacity ratio: 0.5, wind capacity ratio: 2, 2500 MW per cell</dd>
+      <dt>BESS</dt><dd>capacity ratio: 0.5, duration: 4h, round trip efficiency: 88%</dd>
+      <dt>Wind capacity factor source</dt><dd><a href="https://www.renewables.ninja/">renewables.ninja</a></dd>
+    </dl>
+
+    <h2>Strategies</h2>
     <dl class="strategies">
       <dt>Greedy</dt>
       <dd>
@@ -55,15 +66,36 @@
         the same multiple of 2. An area with no solar falls back to ordinary TVCI for wind.
       </dd>
     </dl>
-    <dl class="meta">
-      <dt>Batch</dt><dd>20261116-vary-selection-strategy</dd>
-      <dt>Runs</dt><dd>4 (Greedy, Cluster, TVCI, Wind-TVCI)</dd>
-      <dt>Dispatch years</dt><dd>2022–2024</dd>
-      <dt>Capacity factor year</dt><dd>2025</dd>
-      <dt>VRE</dt><dd>solar capacity ratio: 0.5, wind capacity ratio: 2, 2500 MW per cell</dd>
-      <dt>BESS</dt><dd>capacity ratio: 0.5, duration: 4h, round trip efficiency: 88%</dd>
-      <dt>Wind capacity factor source</dt><dd><a href="https://www.renewables.ninja/">renewables.ninja</a></dd>
-    </dl>
+
+    <h2>Impact of Site Count</h2>
+    <p>
+      The count of sites per balancing area varies because generation is allocated proportionally
+      to each balancing area's gross demand. All strategies allocate the maximum of 2500 MW
+      per grid cell before selecting another site. Also note that in this experiment,
+      we allocate 4x more wind capacity than solar capacity, resulting in far more wind sites.
+      This variation in site count affects how much each strategy can
+      change the result. Where a balancing area has only one site of each generation type,
+      there is almost no placement choice, so the strategies should differ very little.
+      NL.a, NL.b, ON.b, and PE.a are in that group. Complementarity approaches such as TVCI
+      only gain value as the number of sites increases, because each later site is chosen
+      to generate in hours the earlier sites miss. The chart counts wind and solar sites.
+      The count is the same for every strategy in this experiment: each one meets the same
+      capacity target with the same cap per cell, and only the choice of cells changes.
+    </p>
+    <div class="chart"><div id="chart-site-count" class="chart-wrap"></div></div>
+    <h2>Results</h2>
+    <p>
+      The charts below show the performance of each strategy along three dimensions:
+      <strong>net demand</strong>, <strong>satisfied demand hours</strong>,
+      and <strong>curtailment</strong>. The net demand is total grid demand
+      minus total generation from wind, solar, and batteries. A lower net demand is better.
+      The satisfied demand hours is the percentage of hours in the year that the demand was met
+      entirely through solar, wind, and battery generation. A higher satisfied demand hours is
+      better. The curtailment is the percentage of solar and wind generation that exceeded demand
+      and could not be stored in the balancing area's battery storage. This represents wasted
+      generation. A lower curtailment is generally better, but it could also be an indicator
+      of lower generation, so it is a secondary metric.
+    </p>
 
     <div class="chart"><div id="chart-net-demand" class="chart-wrap"></div></div>
     <div class="chart"><div id="chart-sat-demand-hours" class="chart-wrap"></div></div>
@@ -88,7 +120,22 @@
       "ON.a", "ON.b", "PE.a", "QC.a", "QC.b", "SK.a",
     ];
 
-    // One hue and one saturation per strategy, reused on every chart.
+    // Counts from output/20261117-0940-balanced/selected_sites.csv. Wind is onshore
+    // (wind_ons). Colors are separate from the strategy series below.
+    const generationTypes = [
+      {
+        name: "Wind",
+        color: "hsl(5, 64%, 44%)",
+        counts: [9, 7, 3, 2, 1, 1, 2, 13, 1, 1, 16, 2, 3],
+      },
+      {
+        name: "Solar",
+        color: "hsl(52, 76%, 40%)",
+        counts: [3, 2, 1, 1, 1, 1, 1, 4, 1, 1, 4, 1, 1],
+      },
+    ];
+
+    // One hue and one saturation per strategy, reused on every results chart.
     const strategies = [
       {
         name: "Greedy",
@@ -157,13 +204,13 @@
 
     const config = { responsive: true, displayModeBar: false };
 
-    function draw(divId, title, yTitle, metric) {
-      const traces = strategies.map(strategy => ({
+    function draw(divId, title, yTitle, series, metric, yaxisExtra) {
+      const traces = series.map(item => ({
         type: "bar",
         x: areas,
-        y: strategy[metric],
-        name: strategy.name,
-        marker: { color: strategy.color },
+        y: item[metric],
+        name: item.name,
+        marker: { color: item.color },
       }));
       Plotly.newPlot(
         divId,
@@ -171,20 +218,35 @@
         {
           ...baseLayout,
           title: { text: title, font: { size: 16 } },
-          yaxis: { ...baseLayout.yaxis, title: { text: yTitle } },
+          yaxis: { ...baseLayout.yaxis, title: { text: yTitle }, ...yaxisExtra },
         },
         config
       );
     }
 
-    draw("chart-net-demand", "Net Demand by Balancing Area", "net_demand_pct (%)", "netDemand");
+    draw(
+      "chart-site-count",
+      "Selected Sites by Balancing Area",
+      "Sites",
+      generationTypes,
+      "counts",
+      { dtick: 2 }
+    );
+    draw("chart-net-demand", "Net Demand by Balancing Area", "net_demand_pct (%)", strategies, "netDemand");
     draw(
       "chart-sat-demand-hours",
       "Satisfied Demand Hours by Balancing Area",
       "satisfied_demand_hours_pct (%)",
+      strategies,
       "satDemandHours"
     );
-    draw("chart-curtailment", "Curtailment by Balancing Area", "curtailment_pct (%)", "curtailment");
+    draw(
+      "chart-curtailment",
+      "Curtailment by Balancing Area",
+      "curtailment_pct (%)",
+      strategies,
+      "curtailment"
+    );
   </script>
 </body>
 </html>
