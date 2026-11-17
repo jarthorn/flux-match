@@ -1,16 +1,12 @@
 #!/bin/bash
-# Run the balanced scenario in batch mode over a grid of bess capacities and durations.
+# Run each site selection strategy once in batch mode.
 #
 # Usage: bin/run-batch [BATCH]
 set -euo pipefail
 
-BATCH="${1:-20261115-vary-bess-capacity-ninja}"
+BATCH="${1:-20261116-vary-selection-strategy}"
 
-for capacity in 0.5 1 1.5 2 2.5 3 3.5 4; do
-  for duration in 4 12 20; do
-    echo "=== bess_capacity_ratio=$capacity bess_duration=$duration ==="
-    bin/run --batch "$BATCH" --scenario balanced \
-      --config "dispatch.bess_capacity_ratio=$capacity" \
-      --config "dispatch.bess_duration=$duration"
-  done
+for strategy in balanced cluster tvci wind-tvci; do
+  echo "=== scenario=$strategy ==="
+  bin/run --batch "$BATCH" --scenario "$strategy"
 done
