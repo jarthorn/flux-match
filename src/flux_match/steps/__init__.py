@@ -1,1 +1,1 @@
-"""Pipeline steps: fetch, select, preprocess, and dispatch."""
+"""Pipeline steps: fetch, select, postselect, and dispatch."""

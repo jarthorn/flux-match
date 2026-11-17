@@ -11,7 +11,7 @@ from flux_match.errors import DataError
 from flux_match.io import read_csv
 from flux_match.run_context import create_run
 from flux_match.schema import VRE_HOURLY_COLUMNS
-from flux_match.steps.preprocess.preprocess import (
+from flux_match.steps.postselect.postselect import (
     LocatedSite,
     hourly_generation_by_ba,
     locate_sites,
@@ -196,7 +196,7 @@ class WriteVreHourlyTest(TempDirTest):
         self.assertFalse(args[-1].exists())
 
 
-class PreprocessRunTest(TempDirTest):
+class PostselectRunTest(TempDirTest):
     def setUp(self) -> None:
         super().setUp()
         patcher = mock.patch.object(paths, "DATA_DIR", self.dir / "data")

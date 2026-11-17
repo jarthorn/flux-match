@@ -13,7 +13,7 @@ from flux_match import paths
 from flux_match.config import Config
 from flux_match.errors import ConfigError, RunStateError
 
-RUN_STEPS = ("select", "preprocess", "dispatch")
+RUN_STEPS = ("select", "postselect", "dispatch")
 
 MAX_BATCH_INDEX = 9999
 _BATCH_INDEX_PATTERN = re.compile(r"[0-9]{4}")

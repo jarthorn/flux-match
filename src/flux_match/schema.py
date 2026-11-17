@@ -21,7 +21,7 @@ BA_DEMAND_HOURLY_COLUMNS = (
     "demand_mw",
 )
 
-# Hourly wind and solar generation per balancing area, written by the preprocess step.
+# Hourly wind and solar generation per balancing area, written by the postselect step.
 VRE_HOURLY_COLUMNS = (
     "balancing_area",
     "hour",

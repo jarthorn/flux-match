@@ -107,31 +107,31 @@ class RunContextTest(unittest.TestCase):
     def test_step_requires_previous_step(self):
         ctx = create_run(self.scenario, self.output, STARTED)
         with self.assertRaisesRegex(RunStateError, "'select'"):
-            ctx.begin_step("preprocess")
+            ctx.begin_step("postselect")
 
     def test_rerunning_a_step_invalidates_later_steps(self):
         ctx = create_run(self.scenario, self.output, STARTED)
-        for step in ("select", "preprocess", "dispatch"):
+        for step in ("select", "postselect", "dispatch"):
             ctx.begin_step(step)
             ctx.complete_step(step)
 
         ctx = open_run(ctx.run_dir)
-        ctx.begin_step("preprocess")
+        ctx.begin_step("postselect")
         ctx.require_complete("select")
-        for step in ("preprocess", "dispatch"):
+        for step in ("postselect", "dispatch"):
             with self.assertRaises(RunStateError):
                 ctx.require_complete(step)
 
     def test_rerunning_a_step_discards_its_and_later_stats(self):
         ctx = create_run(self.scenario, self.output, STARTED)
-        for step in ("select", "preprocess", "dispatch"):
+        for step in ("select", "postselect", "dispatch"):
             ctx.begin_step(step)
             ctx.record_stats(step, {"step": step})
             ctx.complete_step(step)
 
-        ctx.begin_step("preprocess")
+        ctx.begin_step("postselect")
         self.assertEqual(ctx.read_stats("select"), {"step": "select"})
-        self.assertIsNone(ctx.read_stats("preprocess"))
+        self.assertIsNone(ctx.read_stats("postselect"))
         self.assertIsNone(ctx.read_stats("dispatch"))
 
     def test_remove_intermediate_files_deletes_vre_file_only(self):

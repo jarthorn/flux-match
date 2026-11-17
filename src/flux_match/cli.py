@@ -15,13 +15,13 @@ from flux_match.run_context import RUN_STEPS, RunContext, create_run, open_run
 from flux_match.steps import select
 from flux_match.steps.dispatch import dispatch
 from flux_match.steps.fetch import fetch
-from flux_match.steps.preprocess import preprocess
+from flux_match.steps.postselect import postselect
 
 DEFAULT_SCENARIO = "balanced"
 
 RUN_STEP_FUNCTIONS: dict[str, Callable[[RunContext], None]] = {
     "select": select.run,
-    "preprocess": preprocess.run,
+    "postselect": postselect.run,
     "dispatch": dispatch.run,
 }
 if tuple(RUN_STEP_FUNCTIONS) != RUN_STEPS:
@@ -143,7 +143,7 @@ def _parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=_cmd_step)
 
     for step, help_text in [
-        ("preprocess", "step 3: hourly wind and solar per balancing area"),
+        ("postselect", "step 3: hourly wind and solar per balancing area"),
         ("dispatch", "step 4: hourly battery dispatch and net demand"),
     ]:
         p = commands.add_parser(step, help=help_text)

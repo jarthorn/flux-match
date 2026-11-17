@@ -13,7 +13,7 @@ bin/run [--scenario NAME] [--config KEY=VALUE ...]   # steps 1-4 in a new run fo
 bin/run --batch BATCH [--scenario NAME] [--config ...]  # as above, in output/BATCH/NNNN, keeping only config.toml, run.json and selected_sites.csv
 uv run flux-match fetch [--scenario NAME] [--config ...]  # step 1 only, into data/
 uv run flux-match select [--scenario NAME [--config ...] | --run DIR]
-uv run flux-match preprocess --run output/<run>      # overwrites this step's outputs in place
+uv run flux-match postselect --run output/<run>      # overwrites this step's outputs in place
 uv run flux-match dispatch --run output/<run>
 bin/viz output/<run>                                 # step 5: Streamlit dashboard
 bin/cf-anim --type wind|solar                        # hourly capacity-factor map animation
@@ -46,7 +46,7 @@ Every `config.toml` value is in exactly one of `summary.csv` and `invariants.tom
 
 ## Layout
 
-- `src/flux_match/`: the package. `cli.py` is the entry point; `steps/` holds one sub-package per pipeline step (`fetch/`, `select/`, `preprocess/`, `dispatch/`). Site-selection strategies live under `steps/select/` (one module per strategy, registered in `steps/select/__init__.py`; `total_variation.py` is a shared helper, the Total Variation Complementarity Index, rather than a strategy); `viz/` holds the dashboard. Shared code: `config.py`, `run_context.py`, `paths.py`, `io.py`, `schema.py`, `errors.py`.
+- `src/flux_match/`: the package. `cli.py` is the entry point; `steps/` holds one sub-package per pipeline step (`fetch/`, `select/`, `postselect/`, `dispatch/`). Site-selection strategies live under `steps/select/` (one module per strategy, registered in `steps/select/__init__.py`; `total_variation.py` is a shared helper, the Total Variation Complementarity Index, rather than a strategy); `viz/` holds the dashboard. Shared code: `config.py`, `run_context.py`, `paths.py`, `io.py`, `schema.py`, `errors.py`.
 - `scenarios/`: scenario TOML files, plus `defaults.toml` for shared baseline values.
 - `data/`: raw inputs (git-ignored). `output/`: run folders (git-ignored).
 - `bin/`: batch scripts.
@@ -79,7 +79,7 @@ data can be fetched from either CODERS or renewables.ninja, depending on `fetch.
 The fetch step also derives `data/grid_cell_rankings_<wind source>.csv` (`_coders` or `_ninja`), with one row per grid cell: annual capacity-factor sums for wind and solar, the median daily capacity (sum of a day's 24 hourly factors) over the year, and each cell's rank within its balancing area on each of those four measures (1 = highest; ties broken by `grid_cell_info.csv` order). It is rebuilt when missing or older than its inputs, and requires exactly one `capacity_factor_years` entry.
 Fetch also derives `data/balancing_area_demand.csv`: one row per balancing area, one column per demand year, each cell the total annual demand in MWh. CODERS demand is provincial, so each province's total is split among its balancing areas by population (`PROVINCE_BA_POPULATION` in `balancing_area_demand.py`). It uses every `provincial_demand_*` file in `data/coders/`, regardless of `demand_years`, fails if any year found lacks a province, and is rebuilt only when missing or older than one of those files. Finally, for each of `fetch.demand_years` it derives `data/balancing_area_demand_hourly_<year>.csv`: hourly demand per balancing area, split by the same population shares and sorted by balancing area then hour.
 2. Wind and solar site selection. This step employs a variety of strategies to select a set of wind and solar generation sites across Canada. Each strategy has a short name represented as a single string. See the Site Selection Algorithms section below for details on each strategy. Every strategy writes the same output, `selected_sites.csv`: a sparse table with one row per grid cell and generation type (`wind_ons`, `wind_ofs`, `solar`) that has capacity. The format is specified in `steps/select/base.py`.
-3. Preprocess input data into the format expected for the dispatch step. This consists of calculating the hourly wind and solar generation per balancing area, using the wind and solar sites selected in step 2, combined with the capacity factors per grid cell fetched in 1.
+3. Postselect. Calculate the hourly wind and solar generation per balancing area expected by the dispatch step, using the wind and solar sites selected in step 2 combined with the capacity factors per grid cell fetched in step 1.
 4. Dispatch. This step runs through hourly increments for each balancing area, as described above, streaming the hourly demand file for each of `dispatch_years` alongside `vre_by_ba_hourly.csv`. Each year and balancing area starts with the battery at `bess_initial_soc`; state of charge is not carried between years. The single capacity-factor year is reused for every dispatch year, and each dispatch year must also be in `fetch.demand_years`.
 5. Visualization (optional). This is a standalone script that generates a streamlit dashboard for visualizing the results of the run.
 

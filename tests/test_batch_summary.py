@@ -65,7 +65,7 @@ class BatchSummaryTest(unittest.TestCase):
             "batch_name": "batch",
             "batch_index": index,
             "started": f"2026-11-05T08:0{index}:00",
-            "completed_steps": ["select", "preprocess", "dispatch"],
+            "completed_steps": ["select", "postselect", "dispatch"],
             "dispatch_stats": dispatch_stats(),
             **manifest,
         }
@@ -180,7 +180,7 @@ class BatchSummaryTest(unittest.TestCase):
 
     def test_bad_runs_are_all_reported_and_nothing_written(self):
         self.add_run(1, self.with_overrides())
-        self.add_run(2, self.with_overrides(), completed_steps=["select", "preprocess"])
+        self.add_run(2, self.with_overrides(), completed_steps=["select", "postselect"])
         paths.manifest_path(self.add_run(3, self.with_overrides())).unlink()
         self.add_run(4, self.with_overrides(), batch_index=5)
         stderr = io.StringIO()
