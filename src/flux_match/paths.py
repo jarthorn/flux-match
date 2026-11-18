@@ -41,6 +41,7 @@ SELECTED_SITES_FILENAME = "selected_sites.csv"
 CLUSTERS_FILENAME = "clusters.csv"
 VRE_HOURLY_FILENAME = "vre_by_ba_hourly.csv"
 BA_DEMAND_FILENAME = "balancing_area_demand.csv"
+NORMALIZED_DEMAND_HOURLY_FILENAME = "normalized_demand_hourly.csv"
 
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
 
@@ -106,6 +107,10 @@ def ba_demand_path() -> Path:
 
 def ba_demand_hourly_path(year: int) -> Path:
     return DATA_DIR / ba_demand_hourly_filename(year)
+
+
+def normalized_demand_hourly_path() -> Path:
+    return DATA_DIR / NORMALIZED_DEMAND_HOURLY_FILENAME
 
 
 def grid_cell_rankings_path(wind_source: str) -> Path:

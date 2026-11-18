@@ -21,6 +21,14 @@ BA_DEMAND_HOURLY_COLUMNS = (
     "demand_mw",
 )
 
+# Average across demand years of hourly demand divided by that year's mean, per balancing area.
+# Written by the preselect step. Same layout as BA_DEMAND_HOURLY_COLUMNS.
+NORMALIZED_DEMAND_COLUMNS = (
+    "balancing_area",
+    "hour",
+    "normalized_demand",
+)
+
 # Hourly wind and solar generation per balancing area, written by the postselect step.
 VRE_HOURLY_COLUMNS = (
     "balancing_area",
