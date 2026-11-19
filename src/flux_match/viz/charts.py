@@ -81,10 +81,10 @@ def parse_mw_cell(value: str) -> int | float:
 
 
 def hour_to_display_time(hour: int, year: int) -> datetime:
-    """Map hour-of-year `hour` onto `year`, skipping February 29 in leap years.
+    """Map UTC hour-of-year `hour` onto `year`, skipping February 29 in leap years.
 
     Stored series always have 8760 hours: leap years drop February 29 and renumber, so
-    hour 1417 is March 1. The result is naive: no timezone and no daylight-saving shift.
+    hour 1417 is March 1. Times are UTC.
     """
     if type(hour) is not int or hour < 1 or hour > HOURS_PER_YEAR:
         raise DataError(f"Hour {hour!r} is not an hour of the year")
@@ -93,7 +93,7 @@ def hour_to_display_time(hour: int, year: int) -> datetime:
 
 
 def format_display_time(moment: datetime) -> str:
-    """Clock time with no timezone suffix, so a Plotly date axis shows these digits."""
+    """UTC clock time with no timezone suffix, so a Plotly date axis shows these digits."""
     return moment.strftime("%Y-%m-%d %H:%M:%S")
 
 

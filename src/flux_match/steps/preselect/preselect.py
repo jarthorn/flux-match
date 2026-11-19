@@ -10,9 +10,10 @@ downloading and collating that source, so a missing wind table is a hard failure
 rankings from an incomplete download. Exactly one capacity_factor_years entry is required.
 
 The second is data/normalized_demand_hourly.csv, from every fetch.demand_years hourly demand
-file. Each balancing area's demand is divided by that area's average hourly demand for the year,
-so the year's normalized hours sum to 8760. Those curves are then averaged, unweighted, across
-the configured years. It is rebuilt when missing or older than any of those hourly files.
+file (UTC hour-ending). Each balancing area's demand is divided by that area's average hourly
+demand for the year, so the year's normalized hours sum to 8760. Those curves are then averaged,
+unweighted, across the configured years. It is rebuilt when missing or older than any of those
+hourly files.
 """
 
 import math

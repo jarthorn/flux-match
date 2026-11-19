@@ -5,14 +5,17 @@ import unittest
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from flux_match.balancing_area_demand import (
     BA_COLUMN,
     PROVINCE_BA_POPULATION,
     PROVINCE_NAMES,
+    PROVINCE_UTC_OFFSET_HOURS,
     build_ba_demand,
     build_hourly_ba_demand,
     find_demand_files,
+    local_to_utc,
     read_annual_demand,
     read_ba_demand,
     split_by_population,
@@ -58,6 +61,26 @@ class TempDirTest(unittest.TestCase):
 class PopulationTableTest(unittest.TestCase):
     def test_every_province_code_has_a_population_entry_and_vice_versa(self):
         self.assertEqual(set(PROVINCE_NAMES.values()), set(PROVINCE_BA_POPULATION))
+
+    def test_offset_keys_match_province_names(self):
+        self.assertEqual(set(PROVINCE_UTC_OFFSET_HOURS), set(PROVINCE_NAMES))
+
+    def test_offsets_are_local_standard_time_minus_utc(self):
+        self.assertEqual(
+            PROVINCE_UTC_OFFSET_HOURS,
+            {
+                "BC": -8,
+                "AB": -7,
+                "SK": -6,
+                "MB": -6,
+                "ON": -5,
+                "QC": -5,
+                "NB": -4,
+                "NS": -4,
+                "PE": -4,
+                "NL": -4,
+            },
+        )
 
     def test_every_province_has_positive_populations(self):
         for province, populations in PROVINCE_BA_POPULATION.items():
@@ -216,6 +239,29 @@ class WriteTest(TempDirTest):
         self.assertEqual([p.name for p in self.dir.glob("*.csv*")], [])
 
 
+class LocalToUtcTest(unittest.TestCase):
+    def test_rotation_wraps_the_year_and_preserves_the_total(self):
+        values = [10.0, 20.0, 30.0, 40.0, 50.0]
+        # Offset -2 means k = 2: UTC hour u takes local hour ((u - 1 - 2) mod 5) + 1.
+        got = local_to_utc(values, -2)
+        self.assertEqual(got, [40.0, 50.0, 10.0, 20.0, 30.0])
+        self.assertEqual(math.fsum(got), math.fsum(values))
+
+    def test_ontario_hour_6_is_local_hour_1_and_the_start_of_the_year_wraps(self):
+        local = [float(hour) for hour in range(1, HOURS_PER_YEAR + 1)]
+        utc = local_to_utc(local, PROVINCE_UTC_OFFSET_HOURS["ON"])
+        self.assertEqual(utc[5], 1.0)
+        self.assertEqual(utc[:5], [8756.0, 8757.0, 8758.0, 8759.0, 8760.0])
+
+    def test_shift_after_leap_day_drop_maps_march_1_utc_to_feb_28_local(self):
+        # February 29 is dropped on each clock before this shift, so hour 1417 is
+        # March 1 00:00-01:00. Ontario's UTC hour 1417 is local hour 1412
+        # (February 28 19:00-20:00 EST), the same instant.
+        local = [float(hour) for hour in range(1, HOURS_PER_YEAR + 1)]
+        utc = local_to_utc(local, PROVINCE_UTC_OFFSET_HOURS["ON"])
+        self.assertEqual(utc[1416], 1412.0)
+
+
 class HourlyBaDemandTest(TempDirTest):
     def test_each_hour_split_by_population_and_spanning_ba_sums_both_provinces(self):
         hourly = {code: [0.0, 0.0] for code in PROVINCE_NAMES}
@@ -224,10 +270,41 @@ class HourlyBaDemandTest(TempDirTest):
         on, qc = PROVINCE_BA_POPULATION["Ontario"], PROVINCE_BA_POPULATION["Quebec"]
         on_share = on["Ontario.a"] / sum(on.values())
         qc_share = qc["Ontario.a"] / sum(qc.values())
-        got = build_hourly_ba_demand(hourly)
+        # Zero offsets keep this a test of the split. The shift itself is covered below.
+        offsets = dict.fromkeys(PROVINCE_NAMES, 0)
+        with mock.patch.dict(PROVINCE_UTC_OFFSET_HOURS, offsets, clear=True):
+            got = build_hourly_ba_demand(hourly)
         self.assertAlmostEqual(got["Ontario.a"][0], 100 * on_share + 1000 * qc_share)
         self.assertAlmostEqual(got["Ontario.a"][1], 200 * on_share - 50 * qc_share)
         self.assertAlmostEqual(math.fsum(mw[1] for mw in got.values()), 150.0)
+
+    def test_each_province_is_shifted_by_its_own_offset_before_summing(self):
+        hours = 4
+        hourly = {code: [0.0] * hours for code in PROVINCE_NAMES}
+        hourly["ON"] = [10.0, 20.0, 30.0, 40.0]
+        hourly["QC"] = [100.0, 200.0, 300.0, 400.0]
+        hourly["AB"] = [1.0, 2.0, 3.0, 4.0]
+        # ON k=1 -> [40, 10, 20, 30]; QC k=3 -> [200, 300, 400, 100]; AB stays put.
+        offsets = dict.fromkeys(PROVINCE_NAMES, 0)
+        offsets["ON"] = -1
+        offsets["QC"] = -3
+        on, qc = PROVINCE_BA_POPULATION["Ontario"], PROVINCE_BA_POPULATION["Quebec"]
+        on_share = on["Ontario.a"] / sum(on.values())
+        qc_share = qc["Ontario.a"] / sum(qc.values())
+        with mock.patch.dict(PROVINCE_UTC_OFFSET_HOURS, offsets, clear=True):
+            got = build_hourly_ba_demand(hourly)
+        self.assertAlmostEqual(got["Ontario.a"][0], 40 * on_share + 200 * qc_share)
+        self.assertAlmostEqual(got["Ontario.a"][1], 10 * on_share + 300 * qc_share)
+        self.assertEqual(got["Alberta.a"], [1.0, 2.0, 3.0, 4.0])
+
+    def test_missing_offset_fails(self):
+        hourly = {code: [1.0] for code in PROVINCE_NAMES}
+        offsets = {code: 0 for code in PROVINCE_NAMES if code != "SK"}
+        with (
+            mock.patch.dict(PROVINCE_UTC_OFFSET_HOURS, offsets, clear=True),
+            self.assertRaisesRegex(DataError, r"No UTC offset for provinces \['SK'\]"),
+        ):
+            build_hourly_ba_demand(hourly)
 
     def test_missing_province_fails(self):
         hourly = {code: [1.0] for code in PROVINCE_NAMES if code != "SK"}
@@ -241,7 +318,15 @@ class HourlyBaDemandTest(TempDirTest):
             build_hourly_ba_demand(hourly)
 
     def test_written_sorted_by_balancing_area_then_hour_and_matches_annual_totals(self):
-        write_demand_files(self.data_dir, [2024], {"PE": 2.0})
+        write_demand_files(self.data_dir, [2024])
+        # PE's only balancing area receives the whole province, so the written hours are
+        # the province shifted by its offset (-4). Value at local hour h is h.
+        rows_text = (
+            f"2024-01-01 00:00:00,PE,1,{hour},{hour}\n" for hour in range(1, HOURS_PER_YEAR + 1)
+        )
+        (self.data_dir / "provincial_demand_PE_2024.csv").write_text(
+            DEMAND_HEADER + "".join(rows_text)
+        )
         files = find_demand_files(self.data_dir)[2024]
         dest = self.dir / "balancing_area_demand_hourly_2024.csv"
         write_hourly_ba_demand(files, dest)
@@ -251,7 +336,13 @@ class HourlyBaDemandTest(TempDirTest):
         keys = [(r[BA_COLUMN], int(r["hour"])) for r in rows]
         self.assertEqual(keys, sorted(keys))
         pe = [float(r["demand_mw"]) for r in rows if r[BA_COLUMN] == "Prince Edward Island.a"]
-        self.assertEqual(pe, [2.0] * HOURS_PER_YEAR)
+        k = -PROVINCE_UTC_OFFSET_HOURS["PE"]
+        expected = [
+            float(((hour - 1 - k) % HOURS_PER_YEAR) + 1) for hour in range(1, HOURS_PER_YEAR + 1)
+        ]
+        self.assertEqual(pe, expected)
+        self.assertEqual(pe[:4], [8757.0, 8758.0, 8759.0, 8760.0])
+        self.assertEqual(pe[4], 1.0)
         _, annual = build_ba_demand(
             {2024: {code: read_annual_demand(path, code) for code, path in files.items()}}
         )

@@ -41,6 +41,7 @@ SELECTED_SITES_FILENAME = "selected_sites.csv"
 CLUSTERS_FILENAME = "clusters.csv"
 VRE_HOURLY_FILENAME = "vre_by_ba_hourly.csv"
 BA_DEMAND_FILENAME = "balancing_area_demand.csv"
+# UTC hour-ending, averaged across demand years. Built from the hourly demand files below.
 NORMALIZED_DEMAND_HOURLY_FILENAME = "normalized_demand_hourly.csv"
 
 TIMESTAMP_FORMAT = "%Y%m%d-%H%M"
@@ -61,6 +62,7 @@ def rankings_filename(wind_source: str) -> str:
 
 
 def ba_demand_hourly_filename(year: int) -> str:
+    """Hourly balancing-area demand for `year`, UTC hour-ending."""
     return f"balancing_area_demand_hourly_{year}.csv"
 
 

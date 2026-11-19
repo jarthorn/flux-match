@@ -131,8 +131,8 @@ def main() -> None:
             "plotted at the midpoint of the bucket."
         )
     st.caption(
-        f"Hour 1 is {year}-01-01 00:00. Leap years omit February 29, matching the stored "
-        "8760-hour series. There is no timezone and no daylight-saving shift."
+        f"Hour 1 is {year}-01-01 00:00 UTC. Leap years omit February 29, matching the stored "
+        "8760-hour series."
     )
 
 

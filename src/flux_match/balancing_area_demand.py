@@ -14,8 +14,12 @@ demand is valid, since imports are not modeled and can show up as negative deman
 is summed like any other value.
 
 Also builds `balancing_area_demand_hourly_<year>.csv` for one year: one row per balancing area per
-hour, with each province's hourly demand split by the same population shares. Rows are sorted by
-balancing area, then hour, to match vre_by_ba_hourly.csv so the dispatch step can stream both.
+UTC hour-ending. CODERS demand is local standard time. Each province is shifted by the fixed
+offset in PROVINCE_UTC_OFFSET_HOURS (local standard time minus UTC) before it is split among
+balancing areas, and the year wraps, so the first UTC hours of January 1 take the last local
+hours of December 31. February 29 has already been dropped on the local clock (see fetch).
+Rows are sorted by balancing area, then hour, to match vre_by_ba_hourly.csv so the dispatch
+step can stream both.
 """
 
 import math
@@ -44,6 +48,22 @@ PROVINCE_NAMES: dict[str, str] = {
     "PE": "Prince Edward Island",
     "QC": "Quebec",
     "SK": "Saskatchewan",
+}
+
+# Local standard time minus UTC, in hours. One offset per province: CODERS demand cannot be
+# split by timezone within a province, and Newfoundland's half hour is treated as Atlantic
+# Standard Time. Daylight saving is not applied; the CODERS files are already standard time.
+PROVINCE_UTC_OFFSET_HOURS: dict[str, int] = {
+    "BC": -8,  # PST. Northeast BC (Peace region) is on MST year round.
+    "AB": -7,  # MST
+    "SK": -6,  # CST
+    "MB": -6,  # CST
+    "ON": -5,  # EST. Northwestern Ontario is on Central time.
+    "QC": -5,  # EST. Magdalen Islands and far-eastern Quebec are on Atlantic time.
+    "NB": -4,  # AST
+    "NS": -4,  # AST
+    "PE": -4,  # AST
+    "NL": -4,  # AST. The island of Newfoundland is -3:30; most of Labrador is -4.
 }
 
 PROVINCE_BA_POPULATION: dict[str, dict[str, int]] = {
@@ -133,6 +153,23 @@ def read_hourly_demand(path: Path, province_code: str) -> list[float]:
     return values
 
 
+def local_to_utc(values: Sequence[float], utc_offset_hours: int) -> list[float]:
+    """Rotate one province's local-standard-time series onto UTC hour-ending.
+
+    `utc_offset_hours` is local standard time minus UTC (Ontario is -5). With
+    k = -utc_offset_hours, UTC hour-ending u takes local hour-ending
+    ((u - 1 - k) mod n) + 1. For Ontario, UTC hour 6 (05:00-06:00 UTC) is local hour 1
+    (00:00-01:00 EST), and UTC hours 1-5 wrap to local hours 8756-8760.
+
+    Callers pass a series that has already had February 29 dropped on the local clock.
+    This means the dropped hours don't perfectly match February 29 in UTC, so there
+    are some dropped hours on February 28 and some on March 1.
+    """
+    n = len(values)
+    k = -utc_offset_hours
+    return [values[(index - k) % n] for index in range(n)]
+
+
 def split_by_population(total: float, populations: Mapping[str, int]) -> dict[str, float]:
     """Divide `total` among balancing areas in proportion to their population."""
     population = sum(populations.values())
@@ -176,7 +213,11 @@ def write_balancing_area_demand(files: DemandFiles, dest: Path) -> None:
 def build_hourly_ba_demand(
     provincial_hourly: Mapping[str, Sequence[float]],
 ) -> dict[str, list[float]]:
-    """Hourly MW per balancing area, from province code -> hourly MWh for one year."""
+    """Hourly MW per balancing area, from province code -> local-time hourly MWh for one year.
+
+    Each province is shifted to UTC before its hours are split among balancing areas, so a
+    balancing area that draws from two provinces (Ontario.a) sums shares from the same UTC hour.
+    """
     missing = [code for code in PROVINCE_NAMES if code not in provincial_hourly]
     if missing:
         raise DataError(f"Hourly demand is missing provinces {missing}")
@@ -184,6 +225,9 @@ def build_hourly_ba_demand(
     if len(hours) != 1:
         raise DataError(f"Provincial hourly demand has differing hour counts: {sorted(hours)}")
     (hour_count,) = hours
+    missing_offsets = [code for code in PROVINCE_NAMES if code not in PROVINCE_UTC_OFFSET_HOURS]
+    if missing_offsets:
+        raise DataError(f"No UTC offset for provinces {missing_offsets}")
     totals: dict[str, list[float]] = {
         ba: [0.0] * hour_count
         for populations in PROVINCE_BA_POPULATION.values()
@@ -191,7 +235,8 @@ def build_hourly_ba_demand(
     }
     for code, name in PROVINCE_NAMES.items():
         populations = PROVINCE_BA_POPULATION[name]
-        for hour, mwh in enumerate(provincial_hourly[code]):
+        shifted = local_to_utc(provincial_hourly[code], PROVINCE_UTC_OFFSET_HOURS[code])
+        for hour, mwh in enumerate(shifted):
             for ba, share in split_by_population(mwh, populations).items():
                 totals[ba][hour] += share
     return totals

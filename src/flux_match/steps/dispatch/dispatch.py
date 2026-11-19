@@ -1,10 +1,10 @@
 """Step 5: hourly battery dispatch and net demand for each balancing area.
 
 For each dispatch year, streams data/balancing_area_demand_hourly_<year>.csv (from fetch) and the
-run's vre_by_ba_hourly.csv (from postselect) in lockstep. Both are sorted by balancing area, then
-hour. Each balancing area in a file must have hours 1-8760 in order, and the two files must have
-the same balancing area and hour on every row; anything else is a hard failure. The single
-capacity-factor year in vre_by_ba_hourly.csv is reused for every dispatch year.
+run's vre_by_ba_hourly.csv (from postselect) in lockstep. Both are UTC hour-ending, sorted by
+balancing area, then hour. Each balancing area in a file must have hours 1-8760 in order, and the
+two files must have the same balancing area and hour on every row; anything else is a hard
+failure. The single capacity-factor year in vre_by_ba_hourly.csv is reused for every dispatch year.
 
 Each balancing area has one battery, sized from the newest year in balancing_area_demand.csv:
 

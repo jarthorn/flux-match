@@ -7,9 +7,11 @@ Source-specific download logic lives in sibling modules (fetch_coders.py, and fe
 This module owns the public run() entry point, shared cache helpers, and the derived tables
 written after the raw downloads complete.
 
-Every hourly table is stored with exactly HOURS_PER_YEAR (8760) hours. In leap years,
-February 29 (hour-ending 1417-1440) is dropped and later hours are renumbered, so hour
-1441 becomes 1417. Other columns, such as local_time, keep their original values.
+Every hourly table is stored with exactly HOURS_PER_YEAR (8760) hours, in UTC hour-ending.
+In leap years, February 29 (hour-ending 1417-1440) is dropped on that file's own clock and
+later hours are renumbered, so hour 1441 becomes 1417. Other columns, such as local_time,
+keep their original values. Provincial demand is local standard time; the shift to UTC
+happens later, when the hourly balancing-area files are built, and only after this drop.
 
 A blank demand value is reported on stderr and replaced with the previous hour's value.
 JSON rows that don't all have the same columns are a hard failure, and no file is written.
@@ -20,8 +22,10 @@ demand file in data/coders/, not only the configured demand_years, and every yea
 have all provinces. It is rebuilt when missing or older than any of those files.
 
 Then, for each configured demand year it derives data/balancing_area_demand_hourly_<year>.csv,
-the hourly demand per balancing area that the dispatch step uses. Each is rebuilt when missing or
-older than any of that year's provincial demand files.
+the hourly demand per balancing area that the dispatch step uses, in UTC hour-ending. Each
+province's local-standard-time series is shifted by a fixed offset, with the year wrapped,
+before the population split (see balancing_area_demand.py). Each file is rebuilt when missing
+or older than any of that year's provincial demand files.
 
 The CODERS solar and wind capacity-factor tables are always downloaded, whatever
 fetch.wind_source is, so the CODERS wind table is there as a backup for NINJA's, which takes days
@@ -207,7 +211,13 @@ def _fill_missing_from_previous_hour(
 
 def _drop_leap_day(path: Path, hour_column: str, name: str) -> None:
     """Rewrite a leap-year hourly CSV without February 29. Streams rows, since
-    capacity-factor files are hundreds of MB."""
+    capacity-factor files are hundreds of MB.
+
+    Demand and capacity factors are each dropped on their own clock. Demand is shifted
+    to UTC only afterwards (local_to_utc). That order is deliberate: rotating the raw
+    local series and then dropping UTC February 29 would remove different instants.
+    After both drops, the shift is exact except where the year wraps.
+    """
     with path.open(newline="") as f:
         hours = sum(1 for _ in csv.reader(f)) - 1
     if hours == HOURS_PER_YEAR:
