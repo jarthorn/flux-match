@@ -68,7 +68,7 @@ def main() -> None:
 
     year_col, balancing_area_col, resolution_col, zoom_col = st.columns([1, 2, 1.5, 1.5])
     with year_col:
-        year = st.selectbox("Year", years, index=years.index(max(years)))
+        year = st.selectbox("Demand Year", years, index=years.index(max(years)))
     try:
         demand, vre, dispatch = _cached_tables(str(ctx.run_dir), year)
     except FluxMatchError as e:
@@ -78,7 +78,7 @@ def main() -> None:
     balancing_areas = list(demand.balancing_areas)
     with balancing_area_col:
         balancing_area = st.selectbox(
-            "Balancing area",
+            "Balancing Area",
             balancing_areas,
             index=balancing_areas.index(default_balancing_area(balancing_areas)),
             width=BALANCING_AREA_SELECT_WIDTH,
