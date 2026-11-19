@@ -1,0 +1,3 @@
+#!/bin/bash
+
+uv run --group viz python -m flux_match.viz.ba_overview "$@"

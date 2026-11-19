@@ -18,6 +18,7 @@ uv run flux-match postselect --run output/<run>      # overwrites this step's ou
 uv run flux-match dispatch --run output/<run>
 bin/viz output/<run>                                 # step 6: Streamlit dashboard
 bin/cf-anim --type wind|solar                        # hourly capacity-factor map animation
+bin/ba-overview                                      # balancing-area map and demand overview
 bin/batch-summary --batch BATCH                      # summary CSVs and invariants.toml for a batch
 bin/test                                             # lint and unit tests
 bin/format                                           # ruff fix and format
