@@ -219,6 +219,11 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Skills - these should be added explicitly if desired. We default ignore because libraries
+# such as streamlit generate large skillsets that we don't want to store.
+.agents/
+.claude/
+
 # Streamlit
 .streamlit/secrets.toml
 
