@@ -20,7 +20,7 @@
       are from <a href="https://www.renewables.ninja/">renewables.ninja</a>.
     </p>
     <dl class="meta">
-      <dt>Batch</dt><dd>20261116-vary-selection-strategy</dd>
+      <dt>Batch</dt><dd>20261119-vary-selection-strategy</dd>
       <dt>Runs</dt><dd>4 (Greedy, Cluster, TVCI, Wind-TVCI)</dd>
       <dt>Dispatch years</dt><dd>2022–2024</dd>
       <dt>Capacity factor year</dt><dd>2025</dd>
@@ -103,10 +103,10 @@
 
     <p>
       On the national totals, TVCI has the lowest net demand (8.8%) and the highest share
-      of hours with demand satisfied (85.7%). Wind-TVCI is almost the same (8.82% net demand,
-      85.61% satisfied hours). Greedy is close on satisfied hours (85.63%) but leaves more
+      of hours with demand satisfied (85.77%). Wind-TVCI is almost the same (8.81% net demand,
+      85.65% satisfied hours). Greedy is close on satisfied hours (85.62%) but leaves more
       net demand (9.37%) and the most curtailment (23.12%). Cluster is the outlier: the
-      highest net demand (9.89%), the fewest satisfied hours (83.87%), and the lowest
+      highest net demand (9.88%), the fewest satisfied hours (83.8%), and the lowest
       curtailment (16.63%).
     </p>
   </main>
@@ -140,30 +140,30 @@
       {
         name: "Greedy",
         color: "hsl(207, 78%, 50%)",
-        netDemand: [15.46, 8.21, 8.24, 9.04, 4.46, 6.32, 6.11, 11.23, 6.69, 9.52, 6.0, 9.99, 10.46],
-        satDemandHours: [73.16, 84.84, 86.54, 84.57, 92.82, 90.16, 89.59, 81.26, 89.42, 85.11, 90.27, 84.74, 80.67],
-        curtailment: [17.86, 22.7, 25.58, 20.33, 25.41, 27.52, 25.44, 22.49, 26.93, 27.84, 25.73, 26.48, 16.43],
+        netDemand: [15.55, 8.15, 8.25, 8.96, 4.49, 6.29, 6.05, 11.23, 6.65, 9.5, 5.99, 9.99, 10.45],
+        satDemandHours: [73.07, 84.4, 86.74, 84.6, 92.78, 90.21, 89.68, 81.67, 89.22, 85.14, 90.16, 84.84, 80.51],
+        curtailment: [17.94, 22.65, 25.57, 20.28, 25.43, 27.5, 25.4, 22.47, 26.89, 27.83, 25.73, 26.47, 16.44],
       },
       {
         name: "Cluster",
         color: "hsl(28, 70%, 68%)",
-        netDemand: [17.26, 10.49, 7.71, 9.04, 4.46, 6.32, 6.06, 11.38, 6.69, 9.52, 6.37, 6.53, 9.21],
-        satDemandHours: [61.96, 75.27, 86.66, 84.57, 92.82, 90.16, 89.55, 78.69, 89.42, 85.11, 87.71, 87.56, 80.81],
-        curtailment: [8.69, 9.51, 24.56, 20.33, 25.41, 27.52, 25.38, 17.98, 26.93, 27.84, 17.27, 23.76, 15.38],
+        netDemand: [17.26, 10.5, 7.77, 8.96, 4.49, 6.29, 6.0, 11.37, 6.65, 9.5, 6.35, 6.54, 9.23],
+        satDemandHours: [61.97, 74.54, 86.7, 84.6, 92.78, 90.21, 89.73, 78.91, 89.22, 85.14, 87.55, 87.6, 80.49],
+        curtailment: [8.7, 9.54, 24.58, 20.28, 25.43, 27.5, 25.34, 17.97, 26.89, 27.83, 17.27, 23.76, 15.41],
       },
       {
         name: "TVCI",
         color: "hsl(158, 42%, 44%)",
-        netDemand: [12.8, 6.9, 8.3, 9.71, 4.46, 6.32, 6.06, 11.67, 6.69, 9.52, 6.11, 6.53, 8.8],
-        satDemandHours: [74.79, 85.78, 86.15, 83.45, 92.82, 90.16, 89.55, 78.84, 89.42, 85.11, 89.14, 87.56, 81.29],
-        curtailment: [14.21, 19.46, 25.52, 18.78, 25.41, 27.52, 25.38, 19.98, 26.93, 27.84, 24.08, 23.76, 14.86],
+        netDemand: [12.84, 6.82, 8.33, 9.63, 4.49, 6.29, 6.0, 11.68, 6.65, 9.5, 6.1, 6.54, 8.81],
+        satDemandHours: [75.05, 86.06, 86.37, 83.5, 92.78, 90.21, 89.73, 79.18, 89.22, 85.14, 88.99, 87.6, 81.14],
+        curtailment: [14.24, 19.4, 25.52, 18.73, 25.43, 27.5, 25.34, 19.99, 26.89, 27.83, 24.08, 23.76, 14.88],
       },
       {
         name: "Wind-TVCI",
         color: "hsl(282, 48%, 60%)",
-        netDemand: [13.18, 6.82, 8.03, 9.71, 6.52, 5.17, 5.72, 11.67, 6.75, 9.08, 5.93, 6.57, 8.8],
-        satDemandHours: [74.26, 85.72, 86.67, 83.45, 90.05, 90.49, 89.99, 78.83, 89.17, 85.75, 89.59, 87.67, 81.29],
-        curtailment: [14.09, 19.09, 24.99, 18.78, 27.0, 26.06, 24.85, 20.03, 26.82, 27.31, 24.02, 23.62, 14.86],
+        netDemand: [13.23, 6.75, 8.02, 9.63, 6.5, 5.18, 5.65, 11.68, 6.71, 9.08, 5.92, 6.59, 8.81],
+        satDemandHours: [74.6, 86.03, 86.72, 83.5, 90.06, 90.44, 89.89, 79.16, 89.08, 85.67, 89.43, 87.76, 81.14],
+        curtailment: [14.13, 19.03, 24.96, 18.73, 26.99, 26.06, 24.81, 20.05, 26.78, 27.32, 24.02, 23.63, 14.88],
       },
     ];
 

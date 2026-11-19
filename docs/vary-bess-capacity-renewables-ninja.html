@@ -24,8 +24,11 @@
     <p>
       Duration was also varied (4, 12, and 20&nbsp;h) in this experiment, but with constant capacity. As a
       result, the duration increase was offset by an equivalent decrease on power rating (doubling duration
-      requires dropping the power rating by half). Because of this, storage duration increase has a negligible
-      effect on net demand, curtailment, and satisfied demand hours. The charts below show results for a 4-hour duration only.
+      requires dropping the power rating by half). Because of this, increasing storage duration significantly
+      decreased BESS effectiveness. At 20 hours, satisfied demand hours was 6% lower compared to 4 hour
+      storage. In much of Canada, the effectiveness of BESS storage comes from shifting the solar peak
+      generation to match the demand peak that comes later in the afternoon. The charts below show results
+      for a 4-hour duration only.
     </p>
     <p>
       The results show a clear improvement in net demand, curtailment, and satisfied demand hours as BESS
@@ -35,7 +38,7 @@
       investment may be better spent on increasing VRE capacity than on BESS capacity.
     </p>
     <dl class="meta">
-      <dt>Batch</dt><dd>20261115-vary-bess-capacity-ninja</dd>
+      <dt>Batch</dt><dd>20261119-vary-bess-capacity-ninja</dd>
       <dt>Runs</dt><dd>24 (capacity ratios 0.5–4 step 0.5 × durations 4/12/20h); charts use duration = 4h</dd>
       <dt>Strategy</dt><dd>greedy / annual_capacity</dd>
       <dt>Dispatch years</dt><dd>2022–2024</dd>
@@ -53,14 +56,14 @@
     // Embedded from summary.csv (bess_duration = 4 only):
     // [bess_capacity_ratio, net_demand_pct, curtailment_pct, satisfied_demand_hours_pct]
     const rows = [
-      [0.5, 9.37, 23.12, 85.63],
-      [1, 6.71, 20.48, 90.83],
+      [0.5, 9.37, 23.12, 85.62],
+      [1, 6.72, 20.48, 90.85],
       [1.5, 5.41, 19.12, 93.17],
       [2, 4.65, 18.28, 94.58],
-      [2.5, 4.2, 17.73, 95.43],
-      [3, 3.94, 17.36, 95.91],
-      [3.5, 3.75, 17.05, 96.26],
-      [4, 3.59, 16.77, 96.55],
+      [2.5, 4.2, 17.73, 95.44],
+      [3, 3.94, 17.36, 95.94],
+      [3.5, 3.75, 17.05, 96.3],
+      [4, 3.59, 16.77, 96.58],
     ];
 
     const lineColor = "hsl(188, 55%, 38%)";
